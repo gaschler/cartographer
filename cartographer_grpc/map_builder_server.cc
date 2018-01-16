@@ -30,6 +30,7 @@
 #include "cartographer_grpc/handlers/get_trajectory_node_poses_handler.h"
 #include "cartographer_grpc/handlers/receive_local_slam_results_handler.h"
 #include "cartographer_grpc/proto/map_builder_service.grpc.pb.h"
+#include "cartographer_grpc/sensor/serialization.h"
 #include "glog/logging.h"
 
 namespace cartographer_grpc {
@@ -37,6 +38,7 @@ namespace {
 
 const cartographer::common::Duration kPopTimeout =
     cartographer::common::FromMilliseconds(100);
+const std::string kLocalSlamResultSensorId = "local_slam_result_data";
 
 }  // namespace
 
@@ -56,15 +58,15 @@ MapBuilderServer::MapBuilderContext::sensor_data_queue() {
 
 cartographer::mapping::TrajectoryBuilderInterface::LocalSlamResultCallback
 MapBuilderServer::MapBuilderContext::
-    GetLocalSlamResultCallbackForSubscriptions() {
+GetLocalSlamResultCallbackForSubscriptions() {
   MapBuilderServer* map_builder_server = map_builder_server_;
   return [map_builder_server](
-             int trajectory_id, cartographer::common::Time time,
-             cartographer::transform::Rigid3d local_pose,
-             cartographer::sensor::RangeData range_data,
-             std::unique_ptr<const cartographer::mapping::
-                                 TrajectoryBuilderInterface::InsertionResult>
-                 insertion_result) {
+      int trajectory_id, cartographer::common::Time time,
+      cartographer::transform::Rigid3d local_pose,
+      cartographer::sensor::RangeData range_data,
+      std::unique_ptr<const cartographer::mapping::
+      TrajectoryBuilderInterface::InsertionResult>
+      insertion_result) {
     map_builder_server->OnLocalSlamResult(trajectory_id, time, local_pose,
                                           std::move(range_data),
                                           std::move(insertion_result));
@@ -303,18 +305,28 @@ void MapBuilderServer::OnLocalSlamResult(
     cartographer::transform::Rigid3d local_pose,
     cartographer::sensor::RangeData range_data,
     std::unique_ptr<const cartographer::mapping::TrajectoryBuilderInterface::
-                        InsertionResult>
-        insertion_result) {
+    InsertionResult>
+    insertion_result) {
   auto shared_range_data =
       std::make_shared<cartographer::sensor::RangeData>(std::move(range_data));
+
+  // If we have a cloud uplink add the local SLAM result to the
+  // 'LocalTrajectoryBuilder's upload queue.
+  if (grpc_server_->GetUnsynchronizedContext<MapBuilderContext>()->local_trajectory_uploader()) {
+    auto data_request = cartographer::common::make_unique<proto::AddLocalSlamResultDataRequest>();
+    // TODO(cschuet): Consider reusing the rangefinder sensor ID.
+    sensor::CreateSensorMetadata(kLocalSlamResultSensorId, trajectory_id, data_request->mutable_sensor_metadata());
+    grpc_server_->GetUnsynchronizedContext<MapBuilderContext>()->local_trajectory_uploader()->EnqueueDataRequest(std::move(data_request));
+  }
+
   cartographer::common::MutexLocker locker(&local_slam_subscriptions_lock_);
   for (auto& entry : local_slam_subscriptions_[trajectory_id]) {
     auto copy_of_insertion_result =
         insertion_result
-            ? cartographer::common::make_unique<
-                  const cartographer::mapping::TrajectoryBuilderInterface::
-                      InsertionResult>(*insertion_result)
-            : nullptr;
+        ? cartographer::common::make_unique<
+            const cartographer::mapping::TrajectoryBuilderInterface::
+            InsertionResult>(*insertion_result)
+        : nullptr;
     LocalSlamSubscriptionCallback callback = entry.second;
     callback(cartographer::common::make_unique<LocalSlamResult>(
         LocalSlamResult{trajectory_id, time, local_pose, shared_range_data,
@@ -334,7 +346,7 @@ void MapBuilderServer::UnsubscribeLocalSlamResults(
     const SubscriptionId& subscription_id) {
   cartographer::common::MutexLocker locker(&local_slam_subscriptions_lock_);
   CHECK_EQ(local_slam_subscriptions_[subscription_id.trajectory_id].erase(
-               subscription_id.subscription_index),
+      subscription_id.subscription_index),
            1u);
 }
 
