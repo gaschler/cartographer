@@ -44,7 +44,9 @@ void LocalSlamResult2D::AddToPoseGraph(int trajectory_id,
   DCHECK(dynamic_cast<mapping_2d::PoseGraph *>(pose_graph));
   mapping_2d::PoseGraph *pose_graph_2d =
       static_cast<mapping_2d::PoseGraph *>(pose_graph);
+  LOG(INFO) << "pose_graph_2d->AddNode";
   pose_graph_2d->AddNode(node_data_, trajectory_id, insertion_submaps_);
+  LOG(INFO) << "!pose_graph_2d->AddNode";
 }
 
 LocalSlamResult3D::LocalSlamResult3D(

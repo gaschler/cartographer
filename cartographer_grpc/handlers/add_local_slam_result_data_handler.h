@@ -33,6 +33,7 @@ class AddLocalSlamResultDataHandler
           google::protobuf::Empty> {
  public:
   void OnRequest(const proto::AddLocalSlamResultDataRequest& request) override {
+    LOG(INFO) << "ProcessLocalSlamResultData";
     auto local_slam_result_data =
         GetContext<MapBuilderServer::MapBuilderContext>()
             ->ProcessLocalSlamResultData(
@@ -40,6 +41,7 @@ class AddLocalSlamResultDataHandler
                 cartographer::common::FromUniversal(
                     request.local_slam_result_data().timestamp()),
                 request.local_slam_result_data());
+    LOG(INFO) << "!ProcessLocalSlamResultData";
     GetContext<MapBuilderServer::MapBuilderContext>()
         ->EnqueueLocalSlamResultData(request.sensor_metadata().trajectory_id(),
                                      request.sensor_metadata().sensor_id(),

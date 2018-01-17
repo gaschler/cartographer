@@ -112,6 +112,7 @@ mapping::NodeId PoseGraph::AddNode(
   ++num_trajectory_nodes_;
 
   // Test if the 'insertion_submap.back()' is one we never saw before.
+  LOG(INFO) << "MAGIC CHECK";
   if (submap_data_.SizeOfTrajectoryOrZero(trajectory_id) == 0 ||
       std::prev(submap_data_.EndOfTrajectory(trajectory_id))->data.submap !=
           insertion_submaps.back()) {
@@ -119,6 +120,7 @@ mapping::NodeId PoseGraph::AddNode(
     // time we see a new submap is as 'insertion_submaps.back()'.
     const mapping::SubmapId submap_id =
         submap_data_.Append(trajectory_id, SubmapData());
+    LOG(INFO) << "new submap " << submap_id.submap_index;
     submap_data_.at(submap_id).submap = insertion_submaps.back();
   }
 

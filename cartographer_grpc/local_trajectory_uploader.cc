@@ -80,6 +80,10 @@ void LocalTrajectoryUploader::ProcessSendQueue() {
                      dynamic_cast<const proto::AddOdometryDataRequest *>(
                          data_message.get())) {
         ProcessOdometryDataMessage(odometry_data);
+      } else if (const auto *local_slam_result_data =
+                     dynamic_cast<const proto::AddLocalSlamResultDataRequest *>(
+                         data_message.get())) {
+        ProcessLocalSlamResultDataMessage(local_slam_result_data);
       } else {
         LOG(FATAL) << "Unknown message type: " << data_message->GetTypeName();
       }
@@ -117,6 +121,18 @@ void LocalTrajectoryUploader::ProcessOdometryDataMessage(
     CHECK(odometry_writer_.client_writer);
   }
   odometry_writer_.client_writer->Write(*data_request);
+}
+
+void LocalTrajectoryUploader::ProcessLocalSlamResultDataMessage(
+    const proto::AddLocalSlamResultDataRequest *data_request) {
+  if (!local_slam_result_writer_.client_writer) {
+    local_slam_result_writer_.client_writer =
+        service_stub_->AddLocalSlamResultData(
+            &local_slam_result_writer_.client_context,
+            &local_slam_result_writer_.response);
+    CHECK(local_slam_result_writer_.client_writer);
+  }
+  local_slam_result_writer_.client_writer->Write(*data_request);
 }
 
 void LocalTrajectoryUploader::AddTrajectory(

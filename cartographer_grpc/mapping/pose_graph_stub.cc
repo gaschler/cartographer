@@ -64,8 +64,15 @@ cartographer::transform::Rigid3d PoseGraphStub::GetLocalToGlobalTransform(
   proto::GetLocalToGlobalTransformRequest request;
   request.set_trajectory_id(trajectory_id);
   proto::GetLocalToGlobalTransformResponse response;
-  CHECK(stub_->GetLocalToGlobalTransform(&client_context, request, &response)
-            .ok());
+  auto status =
+      stub_->GetLocalToGlobalTransform(&client_context, request, &response);
+  if (!status.ok()) {
+    LOG(WARNING) << status.error_message();
+    LOG(WARNING) << status.error_details();
+    LOG(WARNING) << status.error_code();
+
+    return cartographer::transform::Rigid3d();
+  }
   return cartographer::transform::ToRigid3(response.local_to_global());
 }
 

@@ -38,7 +38,7 @@ namespace {
 
 const cartographer::common::Duration kPopTimeout =
     cartographer::common::FromMilliseconds(100);
-const std::string kLocalSlamResultSensorId = "local_slam_result_data";
+const std::string kLocalSlamResultSensorId = "echoes";
 
 }  // namespace
 
@@ -107,11 +107,13 @@ MapBuilderServer::MapBuilderContext::UpdateSubmap2D(
   auto submap_it = unfinished_submaps_.find(submap_id);
   if (submap_it == unfinished_submaps_.end()) {
     // Seeing a submap for the first time it should never be finished.
+    LOG(INFO) << "New submap " << submap_id.submap_index;
     CHECK(!proto.submap_2d().finished());
     submap_2d_ptr =
         std::make_shared<cartographer::mapping_2d::Submap>(proto.submap_2d());
     unfinished_submaps_.Insert(submap_id, submap_2d_ptr);
   } else {
+    LOG(INFO) << "Updating submap " << submap_id.submap_index;
     submap_2d_ptr = std::dynamic_pointer_cast<cartographer::mapping_2d::Submap>(
         submap_it->data);
     CHECK(submap_2d_ptr);
@@ -120,6 +122,7 @@ MapBuilderServer::MapBuilderContext::UpdateSubmap2D(
     // If the submap was just finished by the recent update, remove it from the
     // list of unfinished submaps.
     if (submap_2d_ptr->finished()) {
+      LOG(INFO) << "Forgetting submab " << submap_id.submap_index;
       unfinished_submaps_.Trim(submap_id);
     } else {
       // If the submap is unfinished set the 'num_range_data' to 0 since we
@@ -170,14 +173,27 @@ std::unique_ptr<cartographer::mapping::LocalSlamResultData>
 MapBuilderServer::MapBuilderContext::ProcessLocalSlamResultData(
     const std::string& sensor_id, cartographer::common::Time time,
     const cartographer::mapping::proto::LocalSlamResultData& proto) {
-  CHECK_GE(proto.submaps().size(), 0);
+  LOG(INFO) << "Unfinished submaps BEFORE:";
+  for (const auto& submap : unfinished_submaps_) {
+    LOG(INFO) << submap.id.submap_index;
+  }
+
+  CHECK_GE(proto.submaps().size(), 1);
   CHECK(proto.submaps(0).has_submap_2d() || proto.submaps(0).has_submap_3d());
   if (proto.submaps(0).has_submap_2d()) {
+    LOG(INFO) << "2D";
     std::vector<std::shared_ptr<const cartographer::mapping_2d::Submap>>
         submaps;
     for (const auto& submap_proto : proto.submaps()) {
+      LOG(INFO) << "Found submap in proto: "
+                << submap_proto.submap_id().submap_index();
       submaps.push_back(UpdateSubmap2D(submap_proto));
     }
+    LOG(INFO) << "Unfinished submaps AFTER:";
+    for (const auto& submap : unfinished_submaps_) {
+      LOG(INFO) << submap.id.submap_index;
+    }
+    LOG(INFO) << "!2D";
     return cartographer::common::make_unique<
         cartographer::mapping::LocalSlamResult2D>(
         sensor_id, time,
@@ -311,12 +327,21 @@ void MapBuilderServer::OnLocalSlamResult(
       std::make_shared<cartographer::sensor::RangeData>(std::move(range_data));
 
   // If we have a cloud uplink add the local SLAM result to the
-  // 'LocalTrajectoryBuilder's upload queue.
-  if (grpc_server_->GetUnsynchronizedContext<MapBuilderContext>()->local_trajectory_uploader()) {
+  // 'LocalTrajectoryBuilder's upload queue, but only if an insertion actually
+  // occured.
+  if (insertion_result &&
+      grpc_server_->GetUnsynchronizedContext<MapBuilderContext>()
+          ->local_trajectory_uploader()) {
     auto data_request = cartographer::common::make_unique<proto::AddLocalSlamResultDataRequest>();
+    for (const auto& insertion_submap : insertion_result->insertion_submaps) {
+      // LOG(INFO) << insertion_submap->
+    }
     sensor::CreateAddLocalSlamResultDataRequest(
-        kLocalSlamResultSensorId, trajectory_id, time, *insertion_result,
-        data_request.get());
+        kLocalSlamResultSensorId, trajectory_id, time, starting_submap_index,
+        *insertion_result, data_request.get());
+    if (insertion_result->insertion_submaps.front()->finished()) {
+      ++starting_submap_index;
+    }
     // TODO(cschuet): Consider reusing the rangefinder sensor ID.
     grpc_server_->GetUnsynchronizedContext<MapBuilderContext>()->local_trajectory_uploader()->EnqueueDataRequest(std::move(data_request));
   }

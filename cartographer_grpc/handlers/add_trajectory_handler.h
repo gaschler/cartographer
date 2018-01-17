@@ -52,6 +52,11 @@ class AddTrajectoryHandler
       trajectory_builder_options.clear_trajectory_builder_2d_options();
       trajectory_builder_options.clear_trajectory_builder_3d_options();
 
+      LOG(INFO) << "Sensor IDs for trajectory: " << trajectory_id;
+      for (const auto& sensor_id : expected_sensor_ids) {
+        LOG(INFO) << sensor_id;
+      }
+
       GetContext<MapBuilderServer::MapBuilderContext>()
           ->local_trajectory_uploader()
           ->AddTrajectory(trajectory_id, expected_sensor_ids,

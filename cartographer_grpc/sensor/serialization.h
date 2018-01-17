@@ -50,7 +50,7 @@ void CreateAddRangeFinderDataRequest(
     proto::AddRangefinderDataRequest* proto);
 void CreateAddLocalSlamResultDataRequest(
     const std::string& sensor_id, int trajectory_id,
-    cartographer::common::Time time,
+    cartographer::common::Time time, int starting_submap_index,
     const cartographer::mapping::TrajectoryBuilderInterface::InsertionResult&
         insertion_result,
     proto::AddLocalSlamResultDataRequest* proto);

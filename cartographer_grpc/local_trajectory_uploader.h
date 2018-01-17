@@ -59,6 +59,8 @@ class LocalTrajectoryUploader {
   void ProcessImuDataMessage(const proto::AddImuDataRequest* data_request);
   void ProcessOdometryDataMessage(
       const proto::AddOdometryDataRequest* data_request);
+  void ProcessLocalSlamResultDataMessage(
+      const proto::AddLocalSlamResultDataRequest* data_request);
 
   std::shared_ptr<grpc::Channel> client_channel_;
   std::unique_ptr<proto::MapBuilderService::Stub> service_stub_;
@@ -71,6 +73,8 @@ class LocalTrajectoryUploader {
   framework::ClientWriter<proto::AddFixedFramePoseDataRequest>
       fixed_frame_pose_writer_;
   framework::ClientWriter<proto::AddImuDataRequest> imu_writer_;
+  framework::ClientWriter<proto::AddLocalSlamResultDataRequest>
+      local_slam_result_writer_;
   framework::ClientWriter<proto::AddOdometryDataRequest> odometry_writer_;
 };
 

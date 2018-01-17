@@ -91,6 +91,7 @@ void Submap::UpdateFromProto(const mapping::proto::Submap& proto) {
   SetNumRangeData(submap_2d.num_range_data());
   SetFinished(submap_2d.finished());
   if (submap_2d.has_probability_grid()) {
+    LOG(INFO) << "Setting probability_grid";
     probability_grid_ = ProbabilityGrid(submap_2d.probability_grid());
   }
 }
