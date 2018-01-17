@@ -314,8 +314,10 @@ void MapBuilderServer::OnLocalSlamResult(
   // 'LocalTrajectoryBuilder's upload queue.
   if (grpc_server_->GetUnsynchronizedContext<MapBuilderContext>()->local_trajectory_uploader()) {
     auto data_request = cartographer::common::make_unique<proto::AddLocalSlamResultDataRequest>();
+    sensor::CreateAddLocalSlamResultDataRequest(
+        kLocalSlamResultSensorId, trajectory_id, time, *insertion_result,
+        data_request.get());
     // TODO(cschuet): Consider reusing the rangefinder sensor ID.
-    sensor::CreateSensorMetadata(kLocalSlamResultSensorId, trajectory_id, data_request->mutable_sensor_metadata());
     grpc_server_->GetUnsynchronizedContext<MapBuilderContext>()->local_trajectory_uploader()->EnqueueDataRequest(std::move(data_request));
   }
 

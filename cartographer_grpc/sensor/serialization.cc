@@ -63,5 +63,25 @@ void CreateAddRangeFinderDataRequest(
   *proto->mutable_timed_point_cloud_data() = timed_point_cloud_data;
 }
 
+void CreateAddLocalSlamResultDataRequest(
+    const std::string& sensor_id, int trajectory_id,
+    cartographer::common::Time time,
+    const cartographer::mapping::TrajectoryBuilderInterface::InsertionResult&
+        insertion_result,
+    proto::AddLocalSlamResultDataRequest* proto) {
+  sensor::CreateSensorMetadata(sensor_id, trajectory_id,
+                               proto->mutable_sensor_metadata());
+  proto->mutable_local_slam_result_data()->set_timestamp(
+      cartographer::common::ToUniversal(time));
+  *proto->mutable_local_slam_result_data()->mutable_node_data() =
+      cartographer::mapping::ToProto(*insertion_result.constant_data);
+  for (const auto& insertion_submap : insertion_result.insertion_submaps) {
+    // We only send the probability grid up if the submap is finished.
+    insertion_submap->ToProto(
+        proto->mutable_local_slam_result_data()->add_submaps(),
+        insertion_submap->finished());
+  }
+}
+
 }  // namespace sensor
 }  // namespace cartographer_grpc

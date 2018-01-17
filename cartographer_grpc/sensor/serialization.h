@@ -17,6 +17,8 @@
 #ifndef CARTOGRAPHER_GRPC_SENSOR_SERIALIZATION_H
 #define CARTOGRAPHER_GRPC_SENSOR_SERIALIZATION_H
 
+#include <cartographer/mapping/trajectory_builder_interface.h>
+#include "cartographer/mapping/local_slam_result_data.h"
 #include "cartographer/sensor/fixed_frame_pose_data.h"
 #include "cartographer/sensor/imu_data.h"
 #include "cartographer/sensor/odometry_data.h"
@@ -46,6 +48,12 @@ void CreateAddRangeFinderDataRequest(
     const cartographer::sensor::proto::TimedPointCloudData&
         timed_point_cloud_data,
     proto::AddRangefinderDataRequest* proto);
+void CreateAddLocalSlamResultDataRequest(
+    const std::string& sensor_id, int trajectory_id,
+    cartographer::common::Time time,
+    const cartographer::mapping::TrajectoryBuilderInterface::InsertionResult&
+        insertion_result,
+    proto::AddLocalSlamResultDataRequest* proto);
 
 }  // namespace sensor
 }  // namespace cartographer_grpc
