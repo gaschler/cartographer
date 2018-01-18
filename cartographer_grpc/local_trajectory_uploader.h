@@ -55,12 +55,12 @@ class LocalTrajectoryUploader {
  private:
   void ProcessSendQueue();
   void ProcessFixedFramePoseDataMessage(
-      const proto::AddFixedFramePoseDataRequest* data_request);
-  void ProcessImuDataMessage(const proto::AddImuDataRequest* data_request);
+      proto::AddFixedFramePoseDataRequest* data_request);
+  void ProcessImuDataMessage(proto::AddImuDataRequest* data_request);
   void ProcessOdometryDataMessage(
-      const proto::AddOdometryDataRequest* data_request);
+      proto::AddOdometryDataRequest* data_request);
   void ProcessLocalSlamResultDataMessage(
-      const proto::AddLocalSlamResultDataRequest* data_request);
+      proto::AddLocalSlamResultDataRequest* data_request);
 
   std::shared_ptr<grpc::Channel> client_channel_;
   std::unique_ptr<proto::MapBuilderService::Stub> service_stub_;

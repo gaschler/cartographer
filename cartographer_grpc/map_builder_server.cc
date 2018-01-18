@@ -38,7 +38,7 @@ namespace {
 
 const cartographer::common::Duration kPopTimeout =
     cartographer::common::FromMilliseconds(100);
-const std::string kLocalSlamResultSensorId = "echoes";
+const std::string kLocalSlamResultSensorId = "scan";
 
 }  // namespace
 
