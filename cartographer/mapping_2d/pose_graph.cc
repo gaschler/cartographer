@@ -72,7 +72,8 @@ std::vector<mapping::SubmapId> PoseGraph::InitializeGlobalSubmapPoses(
     }
     CHECK_EQ(1, submap_data.SizeOfTrajectoryOrZero(trajectory_id));
     const mapping::SubmapId submap_id{trajectory_id, 0};
-    CHECK(submap_data_.at(submap_id).submap == insertion_submaps.front());
+    LOG(INFO) << submap_id;
+    CHECK_EQ(submap_data_.at(submap_id).submap, insertion_submaps.front());
     return {submap_id};
   }
   CHECK_EQ(2, insertion_submaps.size());
@@ -112,7 +113,6 @@ mapping::NodeId PoseGraph::AddNode(
   ++num_trajectory_nodes_;
 
   // Test if the 'insertion_submap.back()' is one we never saw before.
-  LOG(INFO) << "MAGIC CHECK";
   if (submap_data_.SizeOfTrajectoryOrZero(trajectory_id) == 0 ||
       std::prev(submap_data_.EndOfTrajectory(trajectory_id))->data.submap !=
           insertion_submaps.back()) {

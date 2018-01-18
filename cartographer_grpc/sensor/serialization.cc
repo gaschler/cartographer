@@ -76,18 +76,6 @@ void CreateAddLocalSlamResultDataRequest(
   *proto->mutable_local_slam_result_data()->mutable_node_data() =
       cartographer::mapping::ToProto(*insertion_result.constant_data);
   for (const auto& insertion_submap : insertion_result.insertion_submaps) {
-    static const cartographer::mapping::Submap* last = nullptr;
-
-    if (!last) {
-      last = insertion_submap.get();
-    }
-
-    if (last && last == insertion_submap.get()) {
-      LOG(INFO) << "SAME";
-    } else {
-      LOG(INFO) << "DIFFERENT";
-    }
-
     // We only send the probability grid up if the submap is finished.
     auto* submap = proto->mutable_local_slam_result_data()->add_submaps();
     insertion_submap->ToProto(submap, insertion_submap->finished());

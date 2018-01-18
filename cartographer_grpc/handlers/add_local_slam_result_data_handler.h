@@ -34,6 +34,11 @@ class AddLocalSlamResultDataHandler
  public:
   void OnRequest(const proto::AddLocalSlamResultDataRequest& request) override {
     LOG(INFO) << "ProcessLocalSlamResultData";
+    LOG(INFO) << request.sensor_metadata().trajectory_id();
+    for (auto submap : request.local_slam_result_data().submaps()) {
+      LOG(INFO) << submap.submap_id().trajectory_id() << " "
+          << submap.submap_id().submap_index();
+    }
     auto local_slam_result_data =
         GetContext<MapBuilderServer::MapBuilderContext>()
             ->ProcessLocalSlamResultData(

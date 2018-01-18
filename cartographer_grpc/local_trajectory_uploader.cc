@@ -148,7 +148,6 @@ void LocalTrajectoryUploader::ProcessLocalSlamResultDataMessage(
   data_request->mutable_sensor_metadata()->set_trajectory_id(
       cloud_trajectory_id
   );
-  //for (auto insertion_submap : *data_request->mutable_local_slam_result_data()->mutable_submaps()) {
   for (int i = 0; i < data_request->mutable_local_slam_result_data()->submaps_size();
     ++i) {
     data_request->mutable_local_slam_result_data()->mutable_submaps(i)->
@@ -175,6 +174,8 @@ void LocalTrajectoryUploader::AddTrajectory(
   CHECK_EQ(local_to_cloud_trajectory_id_map_.count(local_trajectory_id), 0);
   local_to_cloud_trajectory_id_map_[local_trajectory_id] =
       result.trajectory_id();
+  LOG(WARNING) << "local_trajectory_id: " << local_trajectory_id
+      << "result.trajectory_id() " << result.trajectory_id();
 }
 
 void LocalTrajectoryUploader::FinishTrajectory(int local_trajectory_id) {

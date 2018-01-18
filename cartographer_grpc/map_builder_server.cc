@@ -103,7 +103,8 @@ MapBuilderServer::MapBuilderContext::UpdateSubmap2D(
   CHECK(proto.has_submap_2d());
   cartographer::mapping::SubmapId submap_id{proto.submap_id().trajectory_id(),
                                             proto.submap_id().submap_index()};
-  std::shared_ptr<cartographer::mapping_2d::Submap> submap_2d_ptr;
+  LOG(INFO) << "Received SubmapId " << submap_id;
+            std::shared_ptr<cartographer::mapping_2d::Submap> submap_2d_ptr;
   auto submap_it = unfinished_submaps_.find(submap_id);
   if (submap_it == unfinished_submaps_.end()) {
     // Seeing a submap for the first time it should never be finished.
@@ -173,15 +174,9 @@ std::unique_ptr<cartographer::mapping::LocalSlamResultData>
 MapBuilderServer::MapBuilderContext::ProcessLocalSlamResultData(
     const std::string& sensor_id, cartographer::common::Time time,
     const cartographer::mapping::proto::LocalSlamResultData& proto) {
-  LOG(INFO) << "Unfinished submaps BEFORE:";
-  for (const auto& submap : unfinished_submaps_) {
-    LOG(INFO) << submap.id.submap_index;
-  }
-
   CHECK_GE(proto.submaps().size(), 1);
   CHECK(proto.submaps(0).has_submap_2d() || proto.submaps(0).has_submap_3d());
   if (proto.submaps(0).has_submap_2d()) {
-    LOG(INFO) << "2D";
     std::vector<std::shared_ptr<const cartographer::mapping_2d::Submap>>
         submaps;
     for (const auto& submap_proto : proto.submaps()) {
@@ -189,11 +184,6 @@ MapBuilderServer::MapBuilderContext::ProcessLocalSlamResultData(
                 << submap_proto.submap_id().submap_index();
       submaps.push_back(UpdateSubmap2D(submap_proto));
     }
-    LOG(INFO) << "Unfinished submaps AFTER:";
-    for (const auto& submap : unfinished_submaps_) {
-      LOG(INFO) << submap.id.submap_index;
-    }
-    LOG(INFO) << "!2D";
     return cartographer::common::make_unique<
         cartographer::mapping::LocalSlamResult2D>(
         sensor_id, time,
