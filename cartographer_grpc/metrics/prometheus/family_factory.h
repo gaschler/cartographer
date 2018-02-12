@@ -32,7 +32,9 @@ class FamilyFactory : public cartographer::metrics::FamilyFactory {
   FamilyFactory();
 
   cartographer::metrics::HistogramFamily* NewHistogramFamily(
-      const std::string& name, const std::string& description) override;
+      const std::string& name, const std::string& description,
+      const cartographer::metrics::Histogram::BucketBoundaries& boundaries)
+      override;
 
   std::weak_ptr<::prometheus::Collectable> GetCollectable() const;
 

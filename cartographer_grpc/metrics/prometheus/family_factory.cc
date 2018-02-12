@@ -10,6 +10,8 @@ namespace prometheus {
 
 namespace {
 
+using BucketBoundaries = cartographer::metrics::Histogram::BucketBoundaries;
+
 class Histogram : public cartographer::metrics::Histogram {
  public:
   Histogram(::prometheus::Histogram* prometheus) : prometheus_(prometheus) {}
@@ -22,12 +24,12 @@ class Histogram : public cartographer::metrics::Histogram {
 
 class HistogramFamily : public cartographer::metrics::HistogramFamily {
  public:
-  HistogramFamily(::prometheus::Family<::prometheus::Histogram>* prometheus)
-      : prometheus_(prometheus) {}
+  HistogramFamily(::prometheus::Family<::prometheus::Histogram>* prometheus,
+                  const BucketBoundaries& boundaries)
+      : prometheus_(prometheus), boundaries_(boundaries) {}
 
-  Histogram* Add(const std::map<std::string, std::string>& labels,
-                 const Histogram::BucketBoundaries& boundaries) override {
-    ::prometheus::Histogram* histogram = &prometheus_->Add(labels, boundaries);
+  Histogram* Add(const std::map<std::string, std::string>& labels) override {
+    ::prometheus::Histogram* histogram = &prometheus_->Add(labels, boundaries_);
     auto wrapper = new Histogram(histogram);
     wrappers_.emplace_back(wrapper);
     return wrapper;
@@ -36,6 +38,7 @@ class HistogramFamily : public cartographer::metrics::HistogramFamily {
  private:
   ::prometheus::Family<::prometheus::Histogram>* prometheus_;
   std::vector<std::unique_ptr<Histogram>> wrappers_;
+  const BucketBoundaries boundaries_;
 };
 
 }  // namespace
@@ -44,12 +47,13 @@ FamilyFactory::FamilyFactory()
     : registry_(std::make_shared<::prometheus::Registry>()) {}
 
 cartographer::metrics::HistogramFamily* FamilyFactory::NewHistogramFamily(
-    const std::string& name, const std::string& description) {
+    const std::string& name, const std::string& description,
+    const BucketBoundaries& boundaries) {
   auto& family = ::prometheus::BuildHistogram()
                      .Name(name)
                      .Help(description)
                      .Register(*registry_);
-  auto wrapper = new HistogramFamily(&family);
+  auto wrapper = new HistogramFamily(&family, boundaries);
   histograms_.emplace_back(wrapper);
   return wrapper;
 }

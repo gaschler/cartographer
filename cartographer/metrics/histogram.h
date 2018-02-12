@@ -42,8 +42,7 @@ class HistogramFamily {
  public:
   virtual ~HistogramFamily() = default;
 
-  virtual Histogram* Add(const std::map<std::string, std::string>& labels,
-                         const Histogram::BucketBoundaries& boundaries) = 0;
+  virtual Histogram* Add(const std::map<std::string, std::string>& labels) = 0;
 };
 
 }  // namespace metrics

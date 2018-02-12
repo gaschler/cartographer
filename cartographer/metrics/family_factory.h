@@ -30,7 +30,8 @@ class FamilyFactory {
   virtual ~FamilyFactory() = default;
 
   virtual HistogramFamily* NewHistogramFamily(
-      const std::string& name, const std::string& description) = 0;
+      const std::string& name, const std::string& description,
+      const Histogram::BucketBoundaries& boundaries) = 0;
 };
 
 }  // namespace metrics

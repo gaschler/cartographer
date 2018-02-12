@@ -44,15 +44,16 @@ static auto gRotationalScoresMetric = metrics::Histogram::Null();
 static auto gLowResolutionScoresMetric = metrics::Histogram::Null();
 
 void ConstraintBuilder::RegisterMetrics(metrics::FamilyFactory* factory) {
+  auto boundaries = metrics::Histogram::FixedWidth(0.05, 20);
   metrics::HistogramFamily* scores = factory->NewHistogramFamily(
       "/mapping_2d/pose_graph/constraint_builder/scores",
-      "Constraint scores built");
-  auto boundaries = metrics::Histogram::FixedWidth(0.05, 20);
-  gScoresMetric = scores->Add({{"kind", "score"}}, boundaries);
+      "Constraint scores built",
+      boundaries);
+  gScoresMetric = scores->Add({{"kind", "score"}});
   gRotationalScoresMetric =
-      scores->Add({{"kind", "rotational_score"}}, boundaries);
+      scores->Add({{"kind", "rotational_score"}});
   gLowResolutionScoresMetric =
-      scores->Add({{"kind", "low_resolution_score"}}, boundaries);
+      scores->Add({{"kind", "low_resolution_score"}});
 }
 
 transform::Rigid2d ComputeSubmapPose(const Submap& submap) {
@@ -216,6 +217,7 @@ void ConstraintBuilder::ComputeConstraint(
       return;
     }
   }
+  gScoresMetric->Observe(score);
   {
     common::MutexLocker locker(&mutex_);
     score_histogram_.Add(score);
