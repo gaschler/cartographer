@@ -28,8 +28,8 @@
 #include "cartographer/common/port.h"
 #include "cartographer/common/time.h"
 #include "cartographer/mapping/id.h"
-#include "cartographer/mapping/pose_graph.h"
 #include "cartographer/mapping/pose_graph/proto/optimization_problem_options.pb.h"
+#include "cartographer/mapping/pose_graph_interface.h"
 #include "cartographer/sensor/fixed_frame_pose_data.h"
 #include "cartographer/sensor/imu_data.h"
 #include "cartographer/sensor/map_by_time.h"
@@ -53,7 +53,8 @@ struct SubmapData {
 // Implements the SPA loop closure method.
 class OptimizationProblem {
  public:
-  using Constraint = mapping::PoseGraph::Constraint;
+  using Constraint = mapping::PoseGraphInterface::Constraint;
+  using LandmarkNode = mapping::PoseGraphInterface::LandmarkNode;
 
   enum class FixZ { kYes, kNo };
 
@@ -88,10 +89,12 @@ class OptimizationProblem {
 
   // Optimizes the global poses.
   void Solve(const std::vector<Constraint>& constraints,
-             const std::set<int>& frozen_trajectories);
+             const std::set<int>& frozen_trajectories,
+             const std::map<std::string, LandmarkNode>& landmark_nodes);
 
   const mapping::MapById<mapping::NodeId, NodeData>& node_data() const;
   const mapping::MapById<mapping::SubmapId, SubmapData>& submap_data() const;
+  const std::map<std::string, transform::Rigid3d>& landmark_data() const;
   const sensor::MapByTime<sensor::ImuData>& imu_data() const;
   const sensor::MapByTime<sensor::OdometryData>& odometry_data() const;
   const sensor::MapByTime<sensor::FixedFramePoseData>& fixed_frame_pose_data()
@@ -113,6 +116,7 @@ class OptimizationProblem {
   FixZ fix_z_;
   mapping::MapById<mapping::NodeId, NodeData> node_data_;
   mapping::MapById<mapping::SubmapId, SubmapData> submap_data_;
+  std::map<std::string, transform::Rigid3d> landmark_data_;
   sensor::MapByTime<sensor::ImuData> imu_data_;
   sensor::MapByTime<sensor::OdometryData> odometry_data_;
   sensor::MapByTime<sensor::FixedFramePoseData> fixed_frame_pose_data_;

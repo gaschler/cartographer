@@ -15,8 +15,10 @@
  */
 
 #include "cartographer/mapping_2d/pose_graph/landmark_cost_function.h"
-#include "cartographer/transform/rigid_transform.h"
 
+#include <memory>
+
+#include "cartographer/transform/rigid_transform.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
@@ -39,27 +41,32 @@ TEST(LandmarkCostFunctionTest, SmokeTest) {
   next_node.time = common::FromUniversal(10);
   next_node.gravity_alignment = Eigen::Quaterniond::Identity();
 
-  auto* cost_function = LandmarkCostFunction::CreateAutoDiffCostFunction(
-      LandmarkObservation{
-          0 /* trajectory ID */,
-          common::FromUniversal(5) /* time */,
-          transform::Rigid3d::Translation(Eigen::Vector3d(1., 1., 1.)),
-          1. /* translation_weight */,
-          2. /* rotation_weight */,
-      },
-      prev_node, next_node);
+  std::unique_ptr<ceres::CostFunction> cost_function(
+      LandmarkCostFunction::CreateAutoDiffCostFunction(
+          LandmarkObservation{
+              0 /* trajectory ID */,
+              common::FromUniversal(5) /* time */,
+              transform::Rigid3d::Translation(Eigen::Vector3d(1., 1., 1.)),
+              1. /* translation_weight */,
+              2. /* rotation_weight */,
+          },
+          prev_node, next_node));
 
-  std::array<double, 3> prev_node_pose{{2., 0., 0.}};
-  std::array<double, 3> next_node_pose{{0., 2., 0.}};
-  std::array<double, 4> landmark_rotation{{1., 0., 0., 0.}};
-  std::array<double, 3> landmark_translation{{1., 2., 1.}};
-  const double* parameter_blocks[] = {
-      prev_node_pose.data(), next_node_pose.data(), landmark_rotation.data(),
-      landmark_translation.data()};
+  const std::array<double, 3> prev_node_pose{{2., 0., 0.}};
+  const std::array<double, 3> next_node_pose{{0., 2., 0.}};
+  const std::array<double, 4> landmark_rotation{{1., 0., 0., 0.}};
+  const std::array<double, 3> landmark_translation{{1., 2., 1.}};
+  const std::array<const double*, 4> parameter_blocks{
+      {prev_node_pose.data(), next_node_pose.data(), landmark_rotation.data(),
+       landmark_translation.data()}};
 
   std::array<double, 6> residuals;
-  cost_function->Evaluate(parameter_blocks, residuals.data(), nullptr);
+  std::array<std::array<double, 13>, 6> jacobians;
+  std::array<double*, 6> jacobians_ptrs;
+  for (int i = 0; i < 6; ++i) jacobians_ptrs[i] = jacobians[i].data();
 
+  cost_function->Evaluate(parameter_blocks.data(), residuals.data(),
+                          jacobians_ptrs.data());
   EXPECT_THAT(residuals, ElementsAre(DoubleEq(1.), DoubleEq(0.), DoubleEq(0.),
                                      DoubleEq(0.), DoubleEq(0.), DoubleEq(0.)));
 }

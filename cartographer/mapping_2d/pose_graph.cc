@@ -80,8 +80,8 @@ std::vector<mapping::SubmapId> PoseGraph::InitializeGlobalSubmapPoses(
   CHECK(submap_data.BeginOfTrajectory(trajectory_id) != end_it);
   const mapping::SubmapId last_submap_id = std::prev(end_it)->id;
   if (submap_data_.at(last_submap_id).submap == insertion_submaps.front()) {
-    // In this case, 'last_submap_id' is the ID of 'insertions_submaps.front()'
-    // and 'insertions_submaps.back()' is new.
+    // In this case, 'last_submap_id' is the ID of
+    // 'insertions_submaps.front()' and 'insertions_submaps.back()' is new.
     const auto& first_submap_pose = submap_data.at(last_submap_id).global_pose;
     optimization_problem_.AddSubmap(
         trajectory_id,
@@ -176,16 +176,15 @@ void PoseGraph::AddLandmarkData(int trajectory_id,
                                 const sensor::LandmarkData& landmark_data)
     EXCLUDES(mutex_) {
   common::MutexLocker locker(&mutex_);
-  for (const auto& observation : landmark_data.landmark_observations) {
-    landmark_nodes_[observation.id].landmark_observations.emplace_back(
-        PoseGraph::LandmarkNode::LandmarkObservation{
-            trajectory_id,
-            landmark_data.time,
-            observation.landmark_to_tracking_transform,
-            observation.translation_weight,
-            observation.rotation_weight,
-        });
-  }
+  AddWorkItem([=]() REQUIRES(mutex_) {
+    for (const auto& observation : landmark_data.landmark_observations) {
+      landmark_nodes_[observation.id].landmark_observations.emplace_back(
+          PoseGraph::LandmarkNode::LandmarkObservation{
+              trajectory_id, landmark_data.time,
+              observation.landmark_to_tracking_transform,
+              observation.translation_weight, observation.rotation_weight});
+    }
+  });
 }
 
 void PoseGraph::ComputeConstraint(const mapping::NodeId& node_id,
@@ -546,11 +545,12 @@ void PoseGraph::RunOptimization() {
     return;
   }
 
-  // No other thread is accessing the optimization_problem_, constraints_ and
-  // frozen_trajectories_ when executing the Solve. Solve is time consuming,
-  // so not taking the mutex before Solve to avoid blocking foreground
-  // processing.
-  optimization_problem_.Solve(constraints_, frozen_trajectories_);
+  // No other thread is accessing the optimization_problem_, constraints_,
+  // frozen_trajectories_ and landmark_nodes_ when executing the Solve. Solve
+  // is time consuming, so not taking the mutex before Solve to avoid blocking
+  // foreground processing.
+  optimization_problem_.Solve(constraints_, frozen_trajectories_,
+                              landmark_nodes_);
   common::MutexLocker locker(&mutex_);
 
   const auto& submap_data = optimization_problem_.submap_data();
@@ -583,6 +583,9 @@ void PoseGraph::RunOptimization() {
           old_global_to_new_global * mutable_trajectory_node.global_pose;
     }
   }
+  for (const auto& landmark : optimization_problem_.landmark_data()) {
+    landmark_nodes_[landmark.first].global_landmark_pose = landmark.second;
+  }
   global_submap_poses_ = submap_data;
 }
 
@@ -603,6 +606,17 @@ PoseGraph::GetTrajectoryNodePoses() {
                                     node_id_data.data.global_pose});
   }
   return node_poses;
+}
+
+std::map<std::string, transform::Rigid3d> PoseGraph::GetLandmarkPoses() {
+  std::map<std::string, transform::Rigid3d> landmark_poses;
+  for (const auto& landmark : landmark_nodes_) {
+    // Landmark without value has not been optimized yet.
+    if (!landmark.second.global_landmark_pose.has_value()) continue;
+    landmark_poses[landmark.first] =
+        landmark.second.global_landmark_pose.value();
+  }
+  return landmark_poses;
 }
 
 sensor::MapByTime<sensor::ImuData> PoseGraph::GetImuData() {

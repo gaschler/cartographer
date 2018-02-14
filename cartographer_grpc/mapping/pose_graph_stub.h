@@ -18,7 +18,6 @@
 #define CARTOGRAPHER_GRPC_MAPPING_POSE_GRAPH_STUB_H_
 
 #include "cartographer/mapping/pose_graph_interface.h"
-#include "cartographer_grpc/proto/map_builder_service.grpc.pb.h"
 #include "grpc++/grpc++.h"
 
 namespace cartographer_grpc {
@@ -26,8 +25,7 @@ namespace mapping {
 
 class PoseGraphStub : public cartographer::mapping::PoseGraphInterface {
  public:
-  PoseGraphStub(std::shared_ptr<grpc::Channel> client_channel,
-                proto::MapBuilderService::Stub* stub);
+  PoseGraphStub(std::shared_ptr<grpc::Channel> client_channel);
 
   PoseGraphStub(const PoseGraphStub&) = delete;
   PoseGraphStub& operator=(const PoseGraphStub&) = delete;
@@ -45,13 +43,14 @@ class PoseGraphStub : public cartographer::mapping::PoseGraphInterface {
   cartographer::mapping::MapById<cartographer::mapping::NodeId,
                                  cartographer::mapping::TrajectoryNodePose>
   GetTrajectoryNodePoses() override;
+  std::map<std::string, cartographer::transform::Rigid3d> GetLandmarkPoses()
+      override;
   bool IsTrajectoryFinished(int trajectory_id) override;
   std::vector<Constraint> constraints() override;
   cartographer::mapping::proto::PoseGraph ToProto() override;
 
  private:
   std::shared_ptr<grpc::Channel> client_channel_;
-  proto::MapBuilderService::Stub* stub_;
 };
 
 }  // namespace mapping
