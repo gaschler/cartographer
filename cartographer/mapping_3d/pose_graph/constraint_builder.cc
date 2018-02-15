@@ -39,21 +39,18 @@ namespace cartographer {
 namespace mapping_3d {
 namespace pose_graph {
 
-static auto gScoresMetric = metrics::Histogram::Null();
-static auto gRotationalScoresMetric = metrics::Histogram::Null();
-static auto gLowResolutionScoresMetric = metrics::Histogram::Null();
+static auto* kScoresMetric = metrics::Histogram::Null();
+static auto* kRotationalScoresMetric = metrics::Histogram::Null();
+static auto* kLowResolutionScoresMetric = metrics::Histogram::Null();
 
 void ConstraintBuilder::RegisterMetrics(metrics::FamilyFactory* factory) {
   auto boundaries = metrics::Histogram::FixedWidth(0.05, 20);
   metrics::HistogramFamily* scores = factory->NewHistogramFamily(
       "/mapping_3d/pose_graph/constraint_builder/scores",
-      "Constraint scores built",
-      boundaries);
-  gScoresMetric = scores->Add({{"kind", "score"}});
-  gRotationalScoresMetric =
-      scores->Add({{"kind", "rotational_score"}});
-  gLowResolutionScoresMetric =
-      scores->Add({{"kind", "low_resolution_score"}});
+      "Constraint scores built", boundaries);
+  kScoresMetric = scores->Add({{"kind", "score"}});
+  kRotationalScoresMetric = scores->Add({{"kind", "rotational_score"}});
+  kLowResolutionScoresMetric = scores->Add({{"kind", "low_resolution_score"}});
 }
 
 ConstraintBuilder::ConstraintBuilder(
@@ -227,9 +224,9 @@ void ConstraintBuilder::ComputeConstraint(
       return;
     }
   }
-  gScoresMetric->Observe(match_result->score);
-  gRotationalScoresMetric->Observe(match_result->rotational_score);
-  gLowResolutionScoresMetric->Observe(match_result->low_resolution_score);
+  kScoresMetric->Observe(match_result->score);
+  kRotationalScoresMetric->Observe(match_result->rotational_score);
+  kLowResolutionScoresMetric->Observe(match_result->low_resolution_score);
   {
     common::MutexLocker locker(&mutex_);
     score_histogram_.Add(match_result->score);
