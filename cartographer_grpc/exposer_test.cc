@@ -59,8 +59,8 @@ TEST(ExposerTest, StartAndStop) {
   Algorithm algorithm;
   algorithm.Run();
 
-  LOG(INFO) << "Sleeping so you can inspect http://localhost:9100/metrics";
-  sleep(60);
+  //LOG(INFO) << "Sleeping so you can inspect http://localhost:9100/metrics";
+  //sleep(60);
 }
 
 }  // namespace
