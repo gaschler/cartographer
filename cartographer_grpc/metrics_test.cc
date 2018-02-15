@@ -15,7 +15,6 @@
  */
 
 #include "cartographer/metrics/family_factory.h"
-#include "cartographer/metrics/histogram.h"
 #include "cartographer/metrics/register.h"
 #include "cartographer_grpc/metrics/prometheus/family_factory.h"
 #include "glog/logging.h"
@@ -26,7 +25,9 @@
 namespace cartographer_grpc {
 namespace {
 
-static auto kScoresMetric = cartographer::metrics::Histogram::Null();
+static auto* kCounter = cartographer::metrics::Counter::Null();
+static auto* kGauge = cartographer::metrics::Gauge::Null();
+static auto* kScoresMetric = cartographer::metrics::Histogram::Null();
 
 const char kLabelKey[] = "kind";
 const char kLabelValue[] = "score";
@@ -48,16 +49,59 @@ class Algorithm {
   }
 };
 
-TEST(MetricsTest, RunExposerServer) {
-  metrics::prometheus::FamilyFactory registry;
-  Algorithm::RegisterMetrics(&registry);
-  ::prometheus::Exposer exposer("0.0.0.0:9100");
-  exposer.RegisterCollectable(registry.GetCollectable());
+TEST(MetricsTest, CollectCounter) {
+  metrics::prometheus::FamilyFactory factory;
+  auto* counter_family = factory.NewCounterFamily("/test/hits", "Hits");
+  kCounter = counter_family->Add({{kLabelKey, kLabelValue}});
+  kCounter->Increment();
+  kCounter->Increment(5);
+  double expected_value = 1 + 5;
+  std::vector<::io::prometheus::client::MetricFamily> collected;
+  {
+    std::shared_ptr<prometheus::Collectable> collectable;
+    CHECK(collectable = factory.GetCollectable().lock());
+    collected = collectable->Collect();
+  }
+  ASSERT_EQ(collected.size(), 1);
+  ASSERT_EQ(collected[0].metric_size(), 1);
+  EXPECT_THAT(
+      collected[0].metric(0).label(),
+      testing::AllOf(
+          testing::ElementsAre(testing::Property(
+              &io::prometheus::client::LabelPair::name, kLabelKey)),
+          testing::ElementsAre(testing::Property(
+              &io::prometheus::client::LabelPair::value, kLabelValue))));
+  EXPECT_THAT(collected[0].metric(0).counter().value(),
+              testing::Eq(expected_value));
+}
 
-  Algorithm algorithm;
-  algorithm.Run();
-  // LOG(INFO) << "Sleeping so you can inspect http://localhost:9100/metrics";
-  // sleep(60);
+TEST(MetricsTest, CollectGauge) {
+  metrics::prometheus::FamilyFactory factory;
+  auto* gauge_family =
+      factory.NewGaugeFamily("/test/queue/length", "Length of some queue");
+  kGauge = gauge_family->Add({{kLabelKey, kLabelValue}});
+  kGauge->Increment();
+  kGauge->Increment(5);
+  kGauge->Decrement();
+  kGauge->Decrement(2);
+  double expected_value = 1 + 5 - 1 - 2;
+  std::vector<::io::prometheus::client::MetricFamily> collected;
+  {
+    std::shared_ptr<prometheus::Collectable> collectable;
+    CHECK(collectable = factory.GetCollectable().lock());
+    collected = collectable->Collect();
+  }
+  ASSERT_EQ(collected.size(), 1);
+  ASSERT_EQ(collected[0].metric_size(), 1);
+  EXPECT_THAT(
+      collected[0].metric(0).label(),
+      testing::AllOf(
+          testing::ElementsAre(testing::Property(
+              &io::prometheus::client::LabelPair::name, kLabelKey)),
+          testing::ElementsAre(testing::Property(
+              &io::prometheus::client::LabelPair::value, kLabelValue))));
+  EXPECT_THAT(collected[0].metric(0).gauge().value(),
+              testing::Eq(expected_value));
 }
 
 TEST(MetricsTest, CollectHistogram) {
@@ -83,6 +127,21 @@ TEST(MetricsTest, CollectHistogram) {
               &io::prometheus::client::LabelPair::value, kLabelValue))));
   EXPECT_THAT(collected[0].metric(0).histogram().sample_count(),
               testing::Eq(kObserveScores.size()));
+  EXPECT_THAT(collected[0].metric(0).histogram().bucket(0).cumulative_count(),
+              testing::Eq(kObserveScores[0]));
+}
+
+TEST(MetricsTest, RunExposerServer) {
+  metrics::prometheus::FamilyFactory registry;
+  Algorithm::RegisterMetrics(&registry);
+  cartographer::metrics::RegisterAllMetrics(&registry);
+  ::prometheus::Exposer exposer("0.0.0.0:9100");
+  exposer.RegisterCollectable(registry.GetCollectable());
+
+  Algorithm algorithm;
+  algorithm.Run();
+  // LOG(INFO) << "Sleeping so you can inspect http://localhost:9100/metrics";
+  // sleep(60);
 }
 
 }  // namespace
