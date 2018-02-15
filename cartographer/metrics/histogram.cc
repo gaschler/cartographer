@@ -16,6 +16,8 @@
 
 #include "cartographer/metrics/histogram.h"
 
+#include "glog/logging.h"
+
 namespace cartographer {
 namespace metrics {
 
@@ -38,7 +40,7 @@ Histogram::BucketBoundaries Histogram::FixedWidth(double width,
                                                   int num_finite_buckets) {
   BucketBoundaries result;
   double boundary = 0;
-  for (double i = 0; i < num_finite_buckets; ++i) {
+  for (int i = 0; i < num_finite_buckets; ++i) {
     boundary += width;
     result.push_back(boundary);
   }
@@ -48,6 +50,8 @@ Histogram::BucketBoundaries Histogram::FixedWidth(double width,
 Histogram::BucketBoundaries Histogram::ScaledPowersOf(double base,
                                                       double scale_factor,
                                                       double max_value) {
+  CHECK_GT(base, 1);
+  CHECK_GT(scale_factor, 0);
   BucketBoundaries result;
   double boundary = scale_factor;
   while (boundary < max_value) {
