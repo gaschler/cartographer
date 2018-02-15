@@ -20,6 +20,8 @@
 #include <memory>
 #include <string>
 
+#include "cartographer/metrics/counter.h"
+#include "cartographer/metrics/gauge.h"
 #include "cartographer/metrics/histogram.h"
 
 namespace cartographer {
@@ -29,6 +31,10 @@ class FamilyFactory {
  public:
   virtual ~FamilyFactory() = default;
 
+  virtual CounterFamily* NewCounterFamily(const std::string& name,
+                                          const std::string& description) = 0;
+  virtual GaugeFamily* NewGaugeFamily(const std::string& name,
+                                      const std::string& description) = 0;
   virtual HistogramFamily* NewHistogramFamily(
       const std::string& name, const std::string& description,
       const Histogram::BucketBoundaries& boundaries) = 0;

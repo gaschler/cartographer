@@ -17,7 +17,9 @@
 #include "cartographer_grpc/metrics/prometheus/family_factory.h"
 
 #include "cartographer/common/make_unique.h"
+#include "prometheus/counter.h"
 #include "prometheus/family.h"
+#include "prometheus/gauge.h"
 #include "prometheus/histogram.h"
 
 namespace cartographer_grpc {
@@ -28,9 +30,71 @@ namespace {
 
 using BucketBoundaries = cartographer::metrics::Histogram::BucketBoundaries;
 
+class Counter : public cartographer::metrics::Counter {
+ public:
+  explicit Counter(::prometheus::Counter* prometheus)
+      : prometheus_(prometheus) {}
+
+  void Increment() override { prometheus_->Increment(); }
+  void Increment(double by_value) override { prometheus_->Increment(by_value); }
+
+ private:
+  ::prometheus::Counter* prometheus_;
+};
+
+class CounterFamily : public cartographer::metrics::CounterFamily {
+ public:
+  explicit CounterFamily(
+      ::prometheus::Family<::prometheus::Counter>* prometheus)
+      : prometheus_(prometheus) {}
+
+  Counter* Add(const std::map<std::string, std::string>& labels) override {
+    ::prometheus::Counter* counter = &prometheus_->Add(labels);
+    auto wrapper = cartographer::common::make_unique<Counter>(counter);
+    wrappers_.emplace_back(std::move(wrapper));
+    return wrapper.get();
+  }
+
+ private:
+  ::prometheus::Family<::prometheus::Counter>* prometheus_;
+  std::vector<std::unique_ptr<Counter>> wrappers_;
+};
+
+class Gauge : public cartographer::metrics::Gauge {
+ public:
+  explicit Gauge(::prometheus::Gauge* prometheus) : prometheus_(prometheus) {}
+
+  void Decrement() override { prometheus_->Decrement(); }
+  void Decrement(double by_value) override { prometheus_->Decrement(by_value); }
+  void Increment() override { prometheus_->Increment(); }
+  void Increment(double by_value) override { prometheus_->Increment(by_value); }
+  void Set(double value) override { prometheus_->Set(value); }
+
+ private:
+  ::prometheus::Gauge* prometheus_;
+};
+
+class GaugeFamily : public cartographer::metrics::GaugeFamily {
+ public:
+  explicit GaugeFamily(::prometheus::Family<::prometheus::Gauge>* prometheus)
+      : prometheus_(prometheus) {}
+
+  Gauge* Add(const std::map<std::string, std::string>& labels) override {
+    ::prometheus::Gauge* gauge = &prometheus_->Add(labels);
+    auto wrapper = cartographer::common::make_unique<Gauge>(gauge);
+    wrappers_.emplace_back(std::move(wrapper));
+    return wrapper.get();
+  }
+
+ private:
+  ::prometheus::Family<::prometheus::Gauge>* prometheus_;
+  std::vector<std::unique_ptr<Gauge>> wrappers_;
+};
+
 class Histogram : public cartographer::metrics::Histogram {
  public:
-  Histogram(::prometheus::Histogram* prometheus) : prometheus_(prometheus) {}
+  explicit Histogram(::prometheus::Histogram* prometheus)
+      : prometheus_(prometheus) {}
 
   void Observe(double value) override { prometheus_->Observe(value); }
 
@@ -46,9 +110,9 @@ class HistogramFamily : public cartographer::metrics::HistogramFamily {
 
   Histogram* Add(const std::map<std::string, std::string>& labels) override {
     ::prometheus::Histogram* histogram = &prometheus_->Add(labels, boundaries_);
-    auto wrapper = new Histogram(histogram);
-    wrappers_.emplace_back(wrapper);
-    return wrapper;
+    auto wrapper = cartographer::common::make_unique<Histogram>(histogram);
+    wrappers_.emplace_back(std::move(wrapper));
+    return wrapper.get();
   }
 
  private:
@@ -62,6 +126,28 @@ class HistogramFamily : public cartographer::metrics::HistogramFamily {
 FamilyFactory::FamilyFactory()
     : registry_(std::make_shared<::prometheus::Registry>()) {}
 
+cartographer::metrics::CounterFamily* FamilyFactory::NewCounterFamily(
+    const std::string& name, const std::string& description) {
+  auto& family = ::prometheus::BuildCounter()
+                     .Name(name)
+                     .Help(description)
+                     .Register(*registry_);
+  auto wrapper = cartographer::common::make_unique<CounterFamily>(&family);
+  counters_.emplace_back(std::move(wrapper));
+  return wrapper.get();
+}
+
+cartographer::metrics::GaugeFamily* FamilyFactory::NewGaugeFamily(
+    const std::string& name, const std::string& description) {
+  auto& family = ::prometheus::BuildGauge()
+                     .Name(name)
+                     .Help(description)
+                     .Register(*registry_);
+  auto wrapper = cartographer::common::make_unique<GaugeFamily>(&family);
+  gauges_.emplace_back(std::move(wrapper));
+  return wrapper.get();
+}
+
 cartographer::metrics::HistogramFamily* FamilyFactory::NewHistogramFamily(
     const std::string& name, const std::string& description,
     const BucketBoundaries& boundaries) {
@@ -69,9 +155,10 @@ cartographer::metrics::HistogramFamily* FamilyFactory::NewHistogramFamily(
                      .Name(name)
                      .Help(description)
                      .Register(*registry_);
-  auto wrapper = new HistogramFamily(&family, boundaries);
-  histograms_.emplace_back(wrapper);
-  return wrapper;
+  auto wrapper =
+      cartographer::common::make_unique<HistogramFamily>(&family, boundaries);
+  histograms_.emplace_back(std::move(wrapper));
+  return wrapper.get();
 }
 
 std::weak_ptr<::prometheus::Collectable> FamilyFactory::GetCollectable() const {

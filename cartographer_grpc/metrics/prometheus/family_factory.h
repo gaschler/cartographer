@@ -31,6 +31,10 @@ class FamilyFactory : public cartographer::metrics::FamilyFactory {
  public:
   FamilyFactory();
 
+  cartographer::metrics::CounterFamily* NewCounterFamily(
+      const std::string& name, const std::string& description) override;
+  cartographer::metrics::GaugeFamily* NewGaugeFamily(
+      const std::string& name, const std::string& description) override;
   cartographer::metrics::HistogramFamily* NewHistogramFamily(
       const std::string& name, const std::string& description,
       const cartographer::metrics::Histogram::BucketBoundaries& boundaries)
@@ -39,6 +43,8 @@ class FamilyFactory : public cartographer::metrics::FamilyFactory {
   std::weak_ptr<::prometheus::Collectable> GetCollectable() const;
 
  private:
+  std::vector<std::unique_ptr<cartographer::metrics::CounterFamily>> counters_;
+  std::vector<std::unique_ptr<cartographer::metrics::GaugeFamily>> gauges_;
   std::vector<std::unique_ptr<cartographer::metrics::HistogramFamily>>
       histograms_;
   std::shared_ptr<::prometheus::Registry> registry_;

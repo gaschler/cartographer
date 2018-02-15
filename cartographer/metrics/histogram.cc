@@ -24,14 +24,14 @@ namespace {
 // Implementation of histogram that does nothing.
 class NullHistogram : public Histogram {
  public:
-  void Observe(double value) override {}
+  void Observe(double) override {}
 };
 
 }  // namespace
 
 Histogram* Histogram::Null() {
-  static NullHistogram nullHistogram;
-  return &nullHistogram;
+  static NullHistogram null_histogram;
+  return &null_histogram;
 }
 
 Histogram::BucketBoundaries Histogram::FixedWidth(double width,
