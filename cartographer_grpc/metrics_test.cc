@@ -23,44 +23,66 @@
 #include "gtest/gtest.h"
 #include "prometheus/exposer.h"
 
-using testing::_;
-
 namespace cartographer_grpc {
 namespace {
 
 static auto kScoresMetric = cartographer::metrics::Histogram::Null();
 
+const char kLabelKey[] = "kind";
+const char kLabelValue[] = "score";
+const std::array<double, 5> kObserveScores = {{-1, 0.11, 0.2, 0.5, 2}};
+
 class Algorithm {
  public:
   static void RegisterMetrics(cartographer::metrics::FamilyFactory* factory) {
     auto boundaries = cartographer::metrics::Histogram::FixedWidth(0.05, 20);
-    cartographer::metrics::HistogramFamily* scores_family = factory->NewHistogramFamily(
-        "/algorithm/scores",
-        "Scores achieved",
-        boundaries);
-    kScoresMetric = scores_family->Add({{"kind", "score"}});
+    cartographer::metrics::HistogramFamily* scores_family =
+        factory->NewHistogramFamily("/algorithm/scores", "Scores achieved",
+                                    boundaries);
+    kScoresMetric = scores_family->Add({{kLabelKey, kLabelValue}});
   }
   void Run() {
-    kScoresMetric->Observe(-1);
-    kScoresMetric->Observe(0.11);
-    kScoresMetric->Observe(0.2);
-    kScoresMetric->Observe(0.5);
-    kScoresMetric->Observe(2);
+    for (double score : kObserveScores) {
+      kScoresMetric->Observe(score);
+    }
   }
 };
 
-TEST(ExposerTest, StartAndStop) {
+TEST(MetricsTest, RunExposerServer) {
   metrics::prometheus::FamilyFactory registry;
   Algorithm::RegisterMetrics(&registry);
-  cartographer::metrics::RegisterAllMetrics(&registry);
   ::prometheus::Exposer exposer("0.0.0.0:9100");
   exposer.RegisterCollectable(registry.GetCollectable());
 
   Algorithm algorithm;
   algorithm.Run();
+  // LOG(INFO) << "Sleeping so you can inspect http://localhost:9100/metrics";
+  // sleep(60);
+}
 
-  //LOG(INFO) << "Sleeping so you can inspect http://localhost:9100/metrics";
-  //sleep(60);
+TEST(MetricsTest, CollectHistogram) {
+  metrics::prometheus::FamilyFactory registry;
+  Algorithm::RegisterMetrics(&registry);
+
+  Algorithm algorithm;
+  algorithm.Run();
+  std::vector<::io::prometheus::client::MetricFamily> collected;
+  {
+    std::shared_ptr<prometheus::Collectable> collectable;
+    CHECK(collectable = registry.GetCollectable().lock());
+    collected = collectable->Collect();
+  }
+  ASSERT_EQ(collected.size(), 1);
+  ASSERT_EQ(collected[0].metric_size(), 1);
+  EXPECT_THAT(
+      collected[0].metric(0).label(),
+      testing::AllOf(
+          testing::ElementsAre(testing::Property(
+              &io::prometheus::client::LabelPair::name, kLabelKey)),
+          testing::ElementsAre(testing::Property(
+              &io::prometheus::client::LabelPair::value, kLabelValue))));
+  EXPECT_THAT(collected[0].metric(0).histogram().sample_count(),
+              testing::Eq(kObserveScores.size()));
 }
 
 }  // namespace
