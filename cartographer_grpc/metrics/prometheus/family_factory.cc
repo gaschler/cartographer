@@ -133,8 +133,9 @@ cartographer::metrics::CounterFamily* FamilyFactory::NewCounterFamily(
                      .Help(description)
                      .Register(*registry_);
   auto wrapper = cartographer::common::make_unique<CounterFamily>(&family);
+  auto* ptr = wrapper.get();
   counters_.emplace_back(std::move(wrapper));
-  return wrapper.get();
+  return ptr;
 }
 
 cartographer::metrics::GaugeFamily* FamilyFactory::NewGaugeFamily(
@@ -144,8 +145,9 @@ cartographer::metrics::GaugeFamily* FamilyFactory::NewGaugeFamily(
                      .Help(description)
                      .Register(*registry_);
   auto wrapper = cartographer::common::make_unique<GaugeFamily>(&family);
+  auto* ptr = wrapper.get();
   gauges_.emplace_back(std::move(wrapper));
-  return wrapper.get();
+  return ptr;
 }
 
 cartographer::metrics::HistogramFamily* FamilyFactory::NewHistogramFamily(
@@ -157,8 +159,9 @@ cartographer::metrics::HistogramFamily* FamilyFactory::NewHistogramFamily(
                      .Register(*registry_);
   auto wrapper =
       cartographer::common::make_unique<HistogramFamily>(&family, boundaries);
+  auto* ptr = wrapper.get();
   histograms_.emplace_back(std::move(wrapper));
-  return wrapper.get();
+  return ptr;
 }
 
 std::weak_ptr<::prometheus::Collectable> FamilyFactory::GetCollectable() const {
