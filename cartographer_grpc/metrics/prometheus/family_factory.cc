@@ -42,7 +42,8 @@ class Counter : public cartographer::metrics::Counter {
   ::prometheus::Counter* prometheus_;
 };
 
-class CounterFamily : public cartographer::metrics::CounterFamily {
+class CounterFamily
+    : public cartographer::metrics::Family<cartographer::metrics::Counter> {
  public:
   explicit CounterFamily(
       ::prometheus::Family<::prometheus::Counter>* prometheus)
@@ -74,7 +75,8 @@ class Gauge : public cartographer::metrics::Gauge {
   ::prometheus::Gauge* prometheus_;
 };
 
-class GaugeFamily : public cartographer::metrics::GaugeFamily {
+class GaugeFamily
+    : public cartographer::metrics::Family<cartographer::metrics::Gauge> {
  public:
   explicit GaugeFamily(::prometheus::Family<::prometheus::Gauge>* prometheus)
       : prometheus_(prometheus) {}
@@ -102,7 +104,8 @@ class Histogram : public cartographer::metrics::Histogram {
   ::prometheus::Histogram* prometheus_;
 };
 
-class HistogramFamily : public cartographer::metrics::HistogramFamily {
+class HistogramFamily
+    : public cartographer::metrics::Family<cartographer::metrics::Histogram> {
  public:
   HistogramFamily(::prometheus::Family<::prometheus::Histogram>* prometheus,
                   const BucketBoundaries& boundaries)
@@ -126,8 +129,9 @@ class HistogramFamily : public cartographer::metrics::HistogramFamily {
 FamilyFactory::FamilyFactory()
     : registry_(std::make_shared<::prometheus::Registry>()) {}
 
-cartographer::metrics::CounterFamily* FamilyFactory::NewCounterFamily(
-    const std::string& name, const std::string& description) {
+cartographer::metrics::Family<cartographer::metrics::Counter>*
+FamilyFactory::NewCounterFamily(const std::string& name,
+                                const std::string& description) {
   auto& family = ::prometheus::BuildCounter()
                      .Name(name)
                      .Help(description)
@@ -138,8 +142,9 @@ cartographer::metrics::CounterFamily* FamilyFactory::NewCounterFamily(
   return ptr;
 }
 
-cartographer::metrics::GaugeFamily* FamilyFactory::NewGaugeFamily(
-    const std::string& name, const std::string& description) {
+cartographer::metrics::Family<cartographer::metrics::Gauge>*
+FamilyFactory::NewGaugeFamily(const std::string& name,
+                              const std::string& description) {
   auto& family = ::prometheus::BuildGauge()
                      .Name(name)
                      .Help(description)
@@ -150,9 +155,10 @@ cartographer::metrics::GaugeFamily* FamilyFactory::NewGaugeFamily(
   return ptr;
 }
 
-cartographer::metrics::HistogramFamily* FamilyFactory::NewHistogramFamily(
-    const std::string& name, const std::string& description,
-    const BucketBoundaries& boundaries) {
+cartographer::metrics::Family<cartographer::metrics::Histogram>*
+FamilyFactory::NewHistogramFamily(const std::string& name,
+                                  const std::string& description,
+                                  const BucketBoundaries& boundaries) {
   auto& family = ::prometheus::BuildHistogram()
                      .Name(name)
                      .Help(description)

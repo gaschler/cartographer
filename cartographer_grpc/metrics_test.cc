@@ -37,9 +37,8 @@ class Algorithm {
  public:
   static void RegisterMetrics(cartographer::metrics::FamilyFactory* factory) {
     auto boundaries = cartographer::metrics::Histogram::FixedWidth(0.05, 20);
-    cartographer::metrics::HistogramFamily* scores_family =
-        factory->NewHistogramFamily("/algorithm/scores", "Scores achieved",
-                                    boundaries);
+    auto* scores_family = factory->NewHistogramFamily(
+        "/algorithm/scores", "Scores achieved", boundaries);
     kScoresMetric = scores_family->Add({{kLabelKey, kLabelValue}});
   }
   void Run() {

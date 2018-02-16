@@ -45,7 +45,7 @@ static auto* kLowResolutionScoresMetric = metrics::Histogram::Null();
 
 void ConstraintBuilder::RegisterMetrics(metrics::FamilyFactory* factory) {
   auto boundaries = metrics::Histogram::FixedWidth(0.05, 20);
-  metrics::HistogramFamily* scores = factory->NewHistogramFamily(
+  auto* scores = factory->NewHistogramFamily(
       "/mapping_3d/pose_graph/constraint_builder/scores",
       "Constraint scores built", boundaries);
   kScoresMetric = scores->Add({{"kind", "score"}});

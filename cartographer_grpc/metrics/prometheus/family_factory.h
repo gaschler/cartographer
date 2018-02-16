@@ -31,21 +31,27 @@ class FamilyFactory : public cartographer::metrics::FamilyFactory {
  public:
   FamilyFactory();
 
-  cartographer::metrics::CounterFamily* NewCounterFamily(
+  cartographer::metrics::Family<cartographer::metrics::Counter>*
+  NewCounterFamily(const std::string& name,
+                   const std::string& description) override;
+  cartographer::metrics::Family<cartographer::metrics::Gauge>* NewGaugeFamily(
       const std::string& name, const std::string& description) override;
-  cartographer::metrics::GaugeFamily* NewGaugeFamily(
-      const std::string& name, const std::string& description) override;
-  cartographer::metrics::HistogramFamily* NewHistogramFamily(
-      const std::string& name, const std::string& description,
-      const cartographer::metrics::Histogram::BucketBoundaries& boundaries)
-      override;
+  cartographer::metrics::Family<cartographer::metrics::Histogram>*
+  NewHistogramFamily(const std::string& name, const std::string& description,
+                     const cartographer::metrics::Histogram::BucketBoundaries&
+                         boundaries) override;
 
   std::weak_ptr<::prometheus::Collectable> GetCollectable() const;
 
  private:
-  std::vector<std::unique_ptr<cartographer::metrics::CounterFamily>> counters_;
-  std::vector<std::unique_ptr<cartographer::metrics::GaugeFamily>> gauges_;
-  std::vector<std::unique_ptr<cartographer::metrics::HistogramFamily>>
+  std::vector<std::unique_ptr<
+      cartographer::metrics::Family<cartographer::metrics::Counter>>>
+      counters_;
+  std::vector<std::unique_ptr<
+      cartographer::metrics::Family<cartographer::metrics::Gauge>>>
+      gauges_;
+  std::vector<std::unique_ptr<
+      cartographer::metrics::Family<cartographer::metrics::Histogram>>>
       histograms_;
   std::shared_ptr<::prometheus::Registry> registry_;
 };
