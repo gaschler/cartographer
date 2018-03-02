@@ -37,7 +37,13 @@ class Dispatchable : public Data {
   const DataType &data() const { return data_; }
 
  private:
-  const DataType data_;
+  DataType data_;
+};
+
+template <>
+class Dispatchable<TimedPointCloudData> {
+ public:
+  void InsertOverlapFrom(Dispatchable<TimedPointCloudData> *other) {}
 };
 
 template <typename DataType>

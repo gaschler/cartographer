@@ -47,5 +47,7 @@ TimedPointCloudData FromProto(const proto::TimedPointCloudData& proto) {
                              timed_point_cloud};
 }
 
+void MoveOverlap(TimedPointCloudData* first, TimedPointCloudData* second) {}
+
 }  // namespace sensor
 }  // namespace cartographer
