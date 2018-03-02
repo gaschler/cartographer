@@ -32,12 +32,14 @@ namespace mapping {
 std::unique_ptr<TrajectoryBuilderInterface> CreateGlobalTrajectoryBuilder2D(
     std::unique_ptr<LocalTrajectoryBuilder2D> local_trajectory_builder,
     const int trajectory_id, mapping::PoseGraph2D* const pose_graph,
+    const std::vector<std::string> expected_range_sensor_ids,
     const TrajectoryBuilderInterface::LocalSlamResultCallback&
         local_slam_result_callback);
 
 std::unique_ptr<TrajectoryBuilderInterface> CreateGlobalTrajectoryBuilder3D(
     std::unique_ptr<LocalTrajectoryBuilder3D> local_trajectory_builder,
     const int trajectory_id, mapping::PoseGraph3D* const pose_graph,
+    const std::vector<std::string> expected_range_sensor_ids,
     const TrajectoryBuilderInterface::LocalSlamResultCallback&
         local_slam_result_callback);
 

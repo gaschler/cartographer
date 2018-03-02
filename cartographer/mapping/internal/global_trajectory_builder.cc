@@ -34,6 +34,7 @@ class GlobalTrajectoryBuilder : public mapping::TrajectoryBuilderInterface {
   GlobalTrajectoryBuilder(
       std::unique_ptr<LocalTrajectoryBuilder> local_trajectory_builder,
       const int trajectory_id, PoseGraph* const pose_graph,
+      const std::vector<std::string> expected_range_sensor_ids,
       const LocalSlamResultCallback& local_slam_result_callback)
       : trajectory_id_(trajectory_id),
         pose_graph_(pose_graph),
@@ -130,23 +131,25 @@ class GlobalTrajectoryBuilder : public mapping::TrajectoryBuilderInterface {
 std::unique_ptr<TrajectoryBuilderInterface> CreateGlobalTrajectoryBuilder2D(
     std::unique_ptr<LocalTrajectoryBuilder2D> local_trajectory_builder,
     const int trajectory_id, mapping::PoseGraph2D* const pose_graph,
+    const std::vector<std::string> expected_range_sensor_ids,
     const TrajectoryBuilderInterface::LocalSlamResultCallback&
         local_slam_result_callback) {
   return common::make_unique<
       GlobalTrajectoryBuilder<LocalTrajectoryBuilder2D, mapping::PoseGraph2D>>(
       std::move(local_trajectory_builder), trajectory_id, pose_graph,
-      local_slam_result_callback);
+      expected_range_sensor_ids, local_slam_result_callback);
 }
 
 std::unique_ptr<TrajectoryBuilderInterface> CreateGlobalTrajectoryBuilder3D(
     std::unique_ptr<LocalTrajectoryBuilder3D> local_trajectory_builder,
     const int trajectory_id, mapping::PoseGraph3D* const pose_graph,
+    const std::vector<std::string> expected_range_sensor_ids,
     const TrajectoryBuilderInterface::LocalSlamResultCallback&
         local_slam_result_callback) {
   return common::make_unique<
       GlobalTrajectoryBuilder<LocalTrajectoryBuilder3D, mapping::PoseGraph3D>>(
       std::move(local_trajectory_builder), trajectory_id, pose_graph,
-      local_slam_result_callback);
+      expected_range_sensor_ids, local_slam_result_callback);
 }
 
 }  // namespace mapping

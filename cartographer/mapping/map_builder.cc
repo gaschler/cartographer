@@ -55,6 +55,17 @@ proto::MapBuilderOptions CreateMapBuilderOptions(
   return options;
 }
 
+std::vector<std::string> SelectRangeSensorIds(
+    const std::set<MapBuilder::SensorId>& expected_sensor_ids) {
+  std::vector<std::string> range_sensor_ids;
+  for (const MapBuilder::SensorId& sensor_id : expected_sensor_ids) {
+    if (sensor_id.type == MapBuilder::SensorId::SensorType::RANGE) {
+      range_sensor_ids.push_back(sensor_id.id);
+    }
+  }
+  return range_sensor_ids;
+}
+
 MapBuilder::MapBuilder(const proto::MapBuilderOptions& options)
     : options_(options), thread_pool_(options.num_background_threads()) {
   if (options.use_trajectory_builder_2d()) {
@@ -88,9 +99,10 @@ int MapBuilder::AddTrajectoryBuilder(
     trajectory_builders_.push_back(
         common::make_unique<CollatedTrajectoryBuilder>(
             sensor_collator_.get(), trajectory_id, expected_sensor_ids,
-            CreateGlobalTrajectoryBuilder3D(std::move(local_trajectory_builder),
-                                            trajectory_id, pose_graph_3d_.get(),
-                                            local_slam_result_callback)));
+            CreateGlobalTrajectoryBuilder3D(
+                std::move(local_trajectory_builder), trajectory_id,
+                pose_graph_3d_.get(), SelectRangeSensorIds(expected_sensor_ids),
+                local_slam_result_callback)));
   } else {
     std::unique_ptr<LocalTrajectoryBuilder2D> local_trajectory_builder;
     if (trajectory_options.has_trajectory_builder_2d_options()) {
@@ -100,9 +112,10 @@ int MapBuilder::AddTrajectoryBuilder(
     trajectory_builders_.push_back(
         common::make_unique<CollatedTrajectoryBuilder>(
             sensor_collator_.get(), trajectory_id, expected_sensor_ids,
-            CreateGlobalTrajectoryBuilder2D(std::move(local_trajectory_builder),
-                                            trajectory_id, pose_graph_2d_.get(),
-                                            local_slam_result_callback)));
+            CreateGlobalTrajectoryBuilder2D(
+                std::move(local_trajectory_builder), trajectory_id,
+                pose_graph_2d_.get(), SelectRangeSensorIds(expected_sensor_ids),
+                local_slam_result_callback)));
   }
   if (trajectory_options.pure_localization()) {
     constexpr int kSubmapsToKeep = 3;
