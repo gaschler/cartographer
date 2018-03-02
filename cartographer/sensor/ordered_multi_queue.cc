@@ -123,39 +123,28 @@ void OrderedMultiQueue::Dispatch() {
     const common::Time common_start_time =
         GetCommonStartTime(next_queue_key.trajectory_id);
 
-    std::unique_ptr<Data> next_data_owner;
     if (next_data->GetTime() >= common_start_time) {
       // Happy case, we are beyond the 'common_start_time' already.
-      next_data_owner = next_queue->queue.Pop();
+      last_dispatched_time_ = next_data->GetTime();
+      next_queue->callback(next_queue->queue.Pop());
     } else if (next_queue->queue.Size() < 2) {
       if (!next_queue->finished) {
         // We cannot decide whether to drop or dispatch this yet.
         CannotMakeProgress(next_queue_key);
         return;
       }
-      next_data_owner = next_queue->queue.Pop();
+      last_dispatched_time_ = next_data->GetTime();
+      next_queue->callback(next_queue->queue.Pop());
     } else {
       // We take a peek at the time after next data. If it also is not beyond
       // 'common_start_time' we drop 'next_data', otherwise we just found the
       // first packet to dispatch from this queue.
-      next_data_owner = next_queue->queue.Pop();
+      std::unique_ptr<Data> next_data_owner = next_queue->queue.Pop();
       if (next_queue->queue.Peek<Data>()->GetTime() > common_start_time) {
-      } else {
-        continue;
+        last_dispatched_time_ = next_data->GetTime();
+        next_queue->callback(std::move(next_data_owner));
       }
     }
-    last_dispatched_time_ = next_data->GetTime();
-    if (auto* range_data = dynamic_cast<Dispatchable<TimedPointCloudData>*>(
-            next_data_owner.get())) {
-      // Consider merging timed point cloud with other range data of the same
-      // trajectory.
-      for (Queue* other_queue : queues_) {
-        Dispatchable<TimedPointCloudData>* other_range_data;
-        //if ()
-      }
-      range_data->CollateOverlapWith(range_data);
-    }
-    next_queue->callback(std::move(next_data_owner));
   }
 }
 

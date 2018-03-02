@@ -37,12 +37,7 @@ proto::TimedPointCloudData ToProto(
 // Converts 'proto' to TimedPointCloudData.
 TimedPointCloudData FromProto(const proto::TimedPointCloudData& proto);
 
-// Moves time-overlapping points into 'first'. 'second' must not have a 'time'
-// before 'first'.
-void MoveOverlap(TimedPointCloudData* first, TimedPointCloudData* second);
-
 }  // namespace sensor
-}  // namespace cartographer
 }  // namespace cartographer
 
 #endif  // CARTOGRAPHER_SENSOR_TIMED_POINT_CLOUD_DATA_H_
