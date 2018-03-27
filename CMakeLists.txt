@@ -170,6 +170,11 @@ google_binary(cartographer_compute_relations_metrics
     cartographer/ground_truth/compute_relations_metrics_main.cc
 )
 
+google_binary(cartographer_merge_maps
+  SRCS
+  cartographer/mapping/internal/merge_maps_main.cpp
+)
+
 if(${BUILD_GRPC})
   google_binary(cartographer_grpc_server
     SRCS
