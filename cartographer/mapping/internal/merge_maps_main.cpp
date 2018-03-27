@@ -25,6 +25,7 @@
 #include "cartographer/io/submap_painter.h"
 #include "cartographer/mapping/internal/2d/pose_graph_2d.h"
 #include "cartographer/mapping/internal/3d/pose_graph_3d.h"
+#include "cartographer/mapping/map_builder.h"
 #include "cartographer/mapping/pose_graph.h"
 #include "cartographer/mapping/proto/pose_graph.pb.h"
 #include "cartographer/mapping/proto/trajectory_builder_options.pb.h"
@@ -32,6 +33,7 @@
 #include "gflags/gflags.h"
 #include "glog/logging.h"
 
+DEFINE_bool(use_3d, false, "Use 3D pipeline (default is 2D).");
 DEFINE_string(pose_graph_filenames, "",
               "Comma-separated list of pbstream files to read.");
 DEFINE_bool(run_optimization, false,
@@ -50,28 +52,6 @@ std::vector<std::string> SplitString(const std::string& input,
     tokens.push_back(token);
   }
   return tokens;
-}
-
-bool Is3D(const proto::AllTrajectoryBuilderOptions& options, bool* success) {
-  if (options.options_with_sensor_ids_size() == 0 ||
-      !options.options_with_sensor_ids(0).has_trajectory_builder_options()) {
-    *success = false;
-    return false;
-  }
-  const auto& o =
-      options.options_with_sensor_ids(0).trajectory_builder_options();
-  if (o.has_trajectory_builder_2d_options() &&
-      !o.has_trajectory_builder_3d_options()) {
-    *success = true;
-    return false;
-  }
-  if (!o.has_trajectory_builder_2d_options() &&
-      o.has_trajectory_builder_3d_options()) {
-    *success = true;
-    return true;
-  }
-  *success = false;
-  return false;
 }
 
 class EmptyOptimizationProblem2D : public pose_graph::OptimizationProblem2D {
@@ -98,31 +78,20 @@ class EmptyOptimizationProblem3D : public pose_graph::OptimizationProblem3D {
       const std::map<std::string, LandmarkNode>& landmark_nodes) override {}
 };
 
-std::unique_ptr<mapping::PoseGraph> LoadProtoStream(
-    io::ProtoStreamReaderInterface* const reader,
-    common::ThreadPool* thread_pool) {
+void AddProtoStreamToPoseGraph(io::ProtoStreamReaderInterface* const reader,
+                               mapping::PoseGraph* pose_graph) {
   proto::PoseGraph pose_graph_proto;
   CHECK(reader->ReadProto(&pose_graph_proto));
   proto::AllTrajectoryBuilderOptions all_builder_options_proto;
   CHECK(reader->ReadProto(&all_builder_options_proto));
-  bool success;
-  bool is_3d = Is3D(all_builder_options_proto, &success);
-  if (!success) {
-    LOG(WARNING)
-        << "Could not determine if 2D or 3D from TrajectoryBuilderOptions.";
-    return nullptr;
-  }
-  std::unique_ptr<mapping::PoseGraph> pose_graph;
-  proto::PoseGraphOptions pose_graph_options;
-  if (is_3d) {
-    // TODO(gaschler): Follow run_optimization flag.
-    pose_graph = common::make_unique<PoseGraph3D>(
-        pose_graph_options, common::make_unique<EmptyOptimizationProblem3D>(),
-        thread_pool);
+  bool is_pose_graph_3d = dynamic_cast<PoseGraph3D*>(pose_graph) != nullptr;
+  CHECK(all_builder_options_proto.options_with_sensor_ids_size() > 0);
+  auto& o = all_builder_options_proto.options_with_sensor_ids(0);
+  CHECK(o.has_trajectory_builder_options());
+  if (is_pose_graph_3d) {
+    CHECK(o.trajectory_builder_options().has_trajectory_builder_3d_options());
   } else {
-    pose_graph = common::make_unique<PoseGraph2D>(
-        pose_graph_options, common::make_unique<EmptyOptimizationProblem2D>(),
-        thread_pool);
+    CHECK(o.trajectory_builder_options().has_trajectory_builder_2d_options());
   }
   CHECK_EQ(pose_graph_proto.trajectory_size(),
            all_builder_options_proto.options_with_sensor_ids_size());
@@ -130,6 +99,7 @@ std::unique_ptr<mapping::PoseGraph> LoadProtoStream(
   std::map<int, int> trajectory_remapping;
   int new_trajectory_id = 0;
   for (auto& trajectory_proto : *pose_graph_proto.mutable_trajectory()) {
+    // TODO: Collect these options for later output.
     const auto& options_with_sensor_ids_proto =
         all_builder_options_proto.options_with_sensor_ids(
             trajectory_proto.trajectory_id());
@@ -184,6 +154,11 @@ std::unique_ptr<mapping::PoseGraph> LoadProtoStream(
       pose_graph->AddNodeFromProto(node_pose, proto.node());
     }
     if (proto.has_submap()) {
+      if (is_pose_graph_3d) {
+        CHECK(proto.submap().has_submap_3d());
+      } else {
+        CHECK(proto.submap().has_submap_2d());
+      }
       proto.mutable_submap()->mutable_submap_id()->set_trajectory_id(
           trajectory_remapping.at(proto.submap().submap_id().trajectory_id()));
       const transform::Rigid3d submap_pose =
@@ -198,10 +173,11 @@ std::unique_ptr<mapping::PoseGraph> LoadProtoStream(
     }
   }
 
-  // pose_graph->AddSerializedConstraints(
-  //    FromProto(pose_graph_proto.constraint()));
+  pose_graph->RunFinalOptimization();
+  // TODO(gaschler): Add constraints.
+  pose_graph->AddSerializedConstraints(
+      FromProto(pose_graph_proto.constraint()));
   CHECK(reader->eof());
-  return pose_graph;
 }
 
 void WritePng(PoseGraph* pose_graph, io::StreamFileWriter* png_writer) {
@@ -220,6 +196,7 @@ void WritePng(PoseGraph* pose_graph, io::StreamFileWriter* png_writer) {
                     &submap_slices[submap_data.id]);
   }
   LOG(INFO) << "Generating combined map image from submap slices.";
+  // TODO(gaschler): Read from flag.
   double resolution = 0.1;
   auto result = io::PaintSubmapSlices(submap_slices, resolution);
   io::Image image(std::move(result.surface));
@@ -227,25 +204,48 @@ void WritePng(PoseGraph* pose_graph, io::StreamFileWriter* png_writer) {
   LOG(INFO) << "Wrote image to " << png_writer->GetFilename();
 }
 
-void Run(const std::string& pose_graph_filenames, bool run_optimization) {
+void Run(bool use_3d, const std::string& pose_graph_filenames,
+         bool run_optimization) {
   auto filenames = SplitString(pose_graph_filenames, ',');
   // TODO(gaschler): Read other pose graphs.
   std::string pose_graph_filename = filenames[0];
-  LOG(INFO) << "Reading pose graph from '" << pose_graph_filename << "'...";
+
   auto thread_pool = common::make_unique<common::ThreadPool>(1);
   std::unique_ptr<mapping::PoseGraph> pose_graph;
+  proto::PoseGraphOptions pose_graph_options;
+  if (use_3d) {
+    // TODO(gaschler): Follow run_optimization flag, read default pose graph
+    // options.
+    pose_graph = common::make_unique<PoseGraph3D>(
+        pose_graph_options, common::make_unique<EmptyOptimizationProblem3D>(),
+        thread_pool.get());
+  } else {
+    pose_graph = common::make_unique<PoseGraph2D>(
+        pose_graph_options, common::make_unique<EmptyOptimizationProblem2D>(),
+        thread_pool.get());
+  }
+
+  LOG(INFO) << "Reading pose graph from '" << pose_graph_filename << "'...";
   {
     io::ProtoStreamReader reader(pose_graph_filename);
-    pose_graph = LoadProtoStream(&reader, thread_pool.get());
-  }
-  if (!pose_graph) {
-    LOG(FATAL) << "Failed to read pose graph.";
+    AddProtoStreamToPoseGraph(&reader, pose_graph.get());
   }
   pose_graph->RunFinalOptimization();
 
-  io::StreamFileWriter writer("output.png");
-  WritePng(pose_graph.get(), &writer);
-  // TODO(gaschler): Save pose graph.
+  {
+    io::StreamFileWriter writer("merged.png");
+    WritePng(pose_graph.get(), &writer);
+  }
+  {
+    std::string output_filename = "merged.pbstream";
+    io::ProtoStreamWriter writer(output_filename);
+    std::vector<proto::TrajectoryBuilderOptionsWithSensorIds>
+        all_trajectory_builder_options;
+    // TODO(gaschler): Collect all_trajectory_builder_options.
+    MapBuilder::SerializeState(all_trajectory_builder_options, pose_graph.get(),
+                               &writer);
+    LOG(INFO) << "Wrote merged pbstream " << output_filename;
+  }
 }
 
 }  // namespace
@@ -263,6 +263,6 @@ int main(int argc, char** argv) {
     google::ShowUsageWithFlags(argv[0]);
     return EXIT_FAILURE;
   }
-  ::cartographer::mapping::Run(FLAGS_pose_graph_filenames,
+  ::cartographer::mapping::Run(FLAGS_use_3d, FLAGS_pose_graph_filenames,
                                FLAGS_run_optimization);
 }

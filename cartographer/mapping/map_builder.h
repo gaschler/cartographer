@@ -60,6 +60,7 @@ class MapBuilder : public MapBuilderInterface {
     SerializeState(all_trajectory_builder_options_, pose_graph_.get(), writer);
   }
 
+  // TODO(gaschler): Consider moving parts of this to PoseGraph.
   static void SerializeState(
       const std::vector<proto::TrajectoryBuilderOptionsWithSensorIds>&
           all_trajectory_builder_options,

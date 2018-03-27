@@ -496,7 +496,11 @@ void PoseGraph2D::AddSerializedConstraints(
   AddWorkItem([this, constraints]() REQUIRES(mutex_) {
     for (const auto& constraint : constraints) {
       CHECK(trajectory_nodes_.Contains(constraint.node_id));
-      CHECK(submap_data_.Contains(constraint.submap_id));
+      // DO NOT SUBMIT
+      if (!submap_data_.Contains(constraint.submap_id)) {
+        LOG(ERROR) << "Could not find submap_id " << constraint.submap_id;
+        continue;
+      }
       CHECK(trajectory_nodes_.at(constraint.node_id).constant_data != nullptr);
       CHECK(submap_data_.at(constraint.submap_id).submap != nullptr);
       switch (constraint.tag) {
