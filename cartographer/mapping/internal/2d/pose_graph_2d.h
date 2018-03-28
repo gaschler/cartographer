@@ -138,15 +138,42 @@ class PoseGraph2D : public PoseGraph {
       int trajectory_id, const common::Time time) const REQUIRES(mutex_);
 
   void FindInterTrajectoryConstraints() override {
+    // TODO(gaschler): Clean up this hack.
     common::MutexLocker locker(&mutex_);
     AddWorkItem([=]() REQUIRES(mutex_) {
-      int i = 0;
-      int kSampleFraction = 2000;
       for (const auto& submap_id_data : submap_data_) {
         for (const auto& node_id_data : trajectory_nodes_) {
           if (submap_id_data.id.trajectory_id !=
                   node_id_data.id.trajectory_id &&
-              i++ % kSampleFraction == 0) {
+              global_localization_samplers_[node_id_data.id.trajectory_id]
+                  ->Pulse()) {
+            const transform::Rigid2d initial_relative_pose =
+                optimization_problem_->submap_data()
+                    .at(submap_id_data.id)
+                    .global_pose.inverse() *
+                optimization_problem_->node_data().at(node_id_data.id).pose;
+            constraint_builder_.MaybeAddConstraint(
+                submap_id_data.id,
+                submap_data_.at(submap_id_data.id).submap.get(),
+                node_id_data.id,
+                trajectory_nodes_.at(node_id_data.id).constant_data.get(),
+                initial_relative_pose);
+          }
+        }
+      }
+    });
+  }
+
+  void FindInterTrajectoryGlobalConstraints() override {
+    // TODO(gaschler): Clean up this hack.
+    common::MutexLocker locker(&mutex_);
+    AddWorkItem([=]() REQUIRES(mutex_) {
+      for (const auto& submap_id_data : submap_data_) {
+        for (const auto& node_id_data : trajectory_nodes_) {
+          if (submap_id_data.id.trajectory_id !=
+                  node_id_data.id.trajectory_id &&
+              global_localization_samplers_[node_id_data.id.trajectory_id]
+                  ->Pulse()) {
             constraint_builder_.MaybeAddGlobalConstraint(
                 submap_id_data.id, submap_id_data.data.submap.get(),
                 node_id_data.id, node_id_data.data.constant_data.get());

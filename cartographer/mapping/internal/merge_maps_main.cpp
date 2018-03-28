@@ -37,7 +37,9 @@
 DEFINE_bool(use_3d, false, "Use 3D pipeline (default is 2D).");
 DEFINE_string(pose_graph_filenames, "",
               "Comma-separated list of pbstream files to read.");
-DEFINE_bool(skip_optimization, false, "Skip all optimization.");
+DEFINE_bool(skip_optimization, false,
+            "Skip all constraint building and optimization.");
+DEFINE_double(resolution, 0.05, "Size of a pixel (meters) in output image.");
 
 namespace cartographer {
 namespace mapping {
@@ -78,15 +80,30 @@ class EmptyOptimizationProblem3D : public pose_graph::OptimizationProblem3D {
       const std::map<std::string, LandmarkNode>& landmark_nodes) override {}
 };
 
-void AddProtoStreamToPoseGraph(io::ProtoStreamReaderInterface* const reader,
-                               mapping::PoseGraph* pose_graph,
-                               int* next_trajectory_id) {
+class RemappingTrajectoryImporter {
+ public:
+  explicit RemappingTrajectoryImporter(mapping::PoseGraph* pose_graph)
+      : pose_graph_(pose_graph) {}
+
+  void LoadTrajectories(io::ProtoStreamReaderInterface* reader);
+
+  void SerializeState(io::ProtoStreamWriter* writer);
+
+ private:
+  std::vector<proto::TrajectoryBuilderOptionsWithSensorIds>
+      all_trajectory_builder_options_;
+  int next_trajectory_id_ = 0;
+  mapping::PoseGraph* pose_graph_;
+};
+
+void RemappingTrajectoryImporter::LoadTrajectories(
+    io::ProtoStreamReaderInterface* const reader) {
   // TODO(gaschler): Reuse this function with MapBuilder.
   proto::PoseGraph pose_graph_proto;
   CHECK(reader->ReadProto(&pose_graph_proto));
   proto::AllTrajectoryBuilderOptions all_builder_options_proto;
   CHECK(reader->ReadProto(&all_builder_options_proto));
-  bool is_pose_graph_3d = dynamic_cast<PoseGraph3D*>(pose_graph) != nullptr;
+  bool is_pose_graph_3d = dynamic_cast<PoseGraph3D*>(pose_graph_) != nullptr;
   CHECK(all_builder_options_proto.options_with_sensor_ids_size() > 0);
   auto& o = all_builder_options_proto.options_with_sensor_ids(0);
   CHECK(o.has_trajectory_builder_options());
@@ -100,16 +117,16 @@ void AddProtoStreamToPoseGraph(io::ProtoStreamReaderInterface* const reader,
 
   std::map<int, int> trajectory_remapping;
   for (auto& trajectory_proto : *pose_graph_proto.mutable_trajectory()) {
-    // TODO: Collect these options for later output.
     const auto& options_with_sensor_ids_proto =
         all_builder_options_proto.options_with_sensor_ids(
             trajectory_proto.trajectory_id());
+    all_trajectory_builder_options_.push_back(options_with_sensor_ids_proto);
     CHECK(trajectory_remapping
-              .emplace(trajectory_proto.trajectory_id(), *next_trajectory_id)
+              .emplace(trajectory_proto.trajectory_id(), next_trajectory_id_)
               .second)
         << "Duplicate trajectory ID: " << trajectory_proto.trajectory_id();
-    trajectory_proto.set_trajectory_id(*next_trajectory_id);
-    *next_trajectory_id += 1;
+    trajectory_proto.set_trajectory_id(next_trajectory_id_);
+    next_trajectory_id_++;
   }
 
   // Apply the calculated remapping to constraints in the pose graph proto.
@@ -153,7 +170,7 @@ void AddProtoStreamToPoseGraph(io::ProtoStreamReaderInterface* const reader,
       const transform::Rigid3d node_pose =
           node_poses.at(NodeId{proto.node().node_id().trajectory_id(),
                                proto.node().node_id().node_index()});
-      pose_graph->AddNodeFromProto(node_pose, proto.node());
+      pose_graph_->AddNodeFromProto(node_pose, proto.node());
     }
     if (proto.has_submap()) {
       if (is_pose_graph_3d) {
@@ -166,43 +183,50 @@ void AddProtoStreamToPoseGraph(io::ProtoStreamReaderInterface* const reader,
       const transform::Rigid3d submap_pose =
           submap_poses.at(SubmapId{proto.submap().submap_id().trajectory_id(),
                                    proto.submap().submap_id().submap_index()});
-      pose_graph->AddSubmapFromProto(submap_pose, proto.submap());
+      pose_graph_->AddSubmapFromProto(submap_pose, proto.submap());
     }
     if (proto.has_trajectory_data()) {
       proto.mutable_trajectory_data()->set_trajectory_id(
           trajectory_remapping.at(proto.trajectory_data().trajectory_id()));
-      pose_graph->SetTrajectoryDataFromProto(proto.trajectory_data());
+      pose_graph_->SetTrajectoryDataFromProto(proto.trajectory_data());
     }
     if (proto.has_imu_data()) {
-      pose_graph->AddImuData(
+      pose_graph_->AddImuData(
           trajectory_remapping.at(proto.imu_data().trajectory_id()),
           sensor::FromProto(proto.imu_data().imu_data()));
     }
     if (proto.has_odometry_data()) {
-      pose_graph->AddOdometryData(
+      pose_graph_->AddOdometryData(
           trajectory_remapping.at(proto.odometry_data().trajectory_id()),
           sensor::FromProto(proto.odometry_data().odometry_data()));
     }
     if (proto.has_fixed_frame_pose_data()) {
-      pose_graph->AddFixedFramePoseData(
+      pose_graph_->AddFixedFramePoseData(
           trajectory_remapping.at(
               proto.fixed_frame_pose_data().trajectory_id()),
           sensor::FromProto(
               proto.fixed_frame_pose_data().fixed_frame_pose_data()));
     }
     if (proto.has_landmark_data()) {
-      pose_graph->AddLandmarkData(
+      pose_graph_->AddLandmarkData(
           trajectory_remapping.at(proto.landmark_data().trajectory_id()),
           sensor::FromProto(proto.landmark_data().landmark_data()));
     }
   }
 
-  pose_graph->AddSerializedConstraints(
+  pose_graph_->AddSerializedConstraints(
       FromProto(pose_graph_proto.constraint()));
   CHECK(reader->eof());
 }
 
-void WritePng(PoseGraph* pose_graph, io::StreamFileWriter* png_writer) {
+void RemappingTrajectoryImporter::SerializeState(
+    io::ProtoStreamWriter* const writer) {
+  MapBuilder::SerializeState(all_trajectory_builder_options_, pose_graph_,
+                             writer);
+}
+
+void WritePng(PoseGraph* pose_graph, io::StreamFileWriter* png_writer,
+              double image_resolution) {
   LOG(INFO) << "Loading submap slices from serialized data.";
   std::map<SubmapId, io::SubmapSlice> submap_slices;
   auto all_submap_data = pose_graph->GetAllSubmapData();
@@ -212,17 +236,15 @@ void WritePng(PoseGraph* pose_graph, io::StreamFileWriter* png_writer) {
     FillSubmapSlice(submap_data.data.pose, submap_proto,
                     &submap_slices[submap_data.id]);
   }
-  LOG(INFO) << "Generating combined map image from submap slices.";
-  // TODO(gaschler): Read from flag.
-  double resolution = 0.05;
-  auto result = io::PaintSubmapSlices(submap_slices, resolution);
+  LOG(INFO) << "Generating combined map image from submap slices";
+  auto result = io::PaintSubmapSlices(submap_slices, image_resolution);
   io::Image image(std::move(result.surface));
   image.WritePng(png_writer);
   LOG(INFO) << "Wrote image to " << png_writer->GetFilename();
 }
 
 void Run(bool use_3d, const std::string& pose_graph_filenames,
-         bool skip_optimization) {
+         bool skip_optimization, double image_resolution) {
   auto filenames = SplitString(pose_graph_filenames, ',');
 
   // TODO: Read options from flag rather than using default.
@@ -255,29 +277,31 @@ void Run(bool use_3d, const std::string& pose_graph_filenames,
         pose_graph_options, std::move(optimization_problem), thread_pool.get());
   }
 
-  int next_trajectory_id = 0;
+  RemappingTrajectoryImporter remapping_importer(pose_graph.get());
   for (const std::string& pose_graph_filename : filenames) {
     LOG(INFO) << "Reading pose graph from '" << pose_graph_filename << "'...";
     io::ProtoStreamReader reader(pose_graph_filename);
-    AddProtoStreamToPoseGraph(&reader, pose_graph.get(), &next_trajectory_id);
+    remapping_importer.LoadTrajectories(&reader);
   }
   pose_graph->RunFinalOptimization();
   CHECK(!pose_graph->IsTrajectoryFrozen(0));
 
-  pose_graph->FindInterTrajectoryConstraints();
-  pose_graph->RunFinalOptimization();
+  if (!skip_optimization) {
+    pose_graph->FindInterTrajectoryGlobalConstraints();
+    pose_graph->RunFinalOptimization();
+    for (int i = 0; i < 10; ++i) {
+      pose_graph->FindInterTrajectoryConstraints();
+    }
+    pose_graph->RunFinalOptimization();
+  }
   {
     io::StreamFileWriter writer("merged.png");
-    WritePng(pose_graph.get(), &writer);
+    WritePng(pose_graph.get(), &writer, image_resolution);
   }
   {
     std::string output_filename = "merged.pbstream";
     io::ProtoStreamWriter writer(output_filename);
-    std::vector<proto::TrajectoryBuilderOptionsWithSensorIds>
-        all_trajectory_builder_options;
-    // TODO(gaschler): Collect all_trajectory_builder_options.
-    MapBuilder::SerializeState(all_trajectory_builder_options, pose_graph.get(),
-                               &writer);
+    remapping_importer.SerializeState(&writer);
     LOG(INFO) << "Wrote merged pbstream " << output_filename;
   }
 }
@@ -298,5 +322,5 @@ int main(int argc, char** argv) {
     return EXIT_FAILURE;
   }
   ::cartographer::mapping::Run(FLAGS_use_3d, FLAGS_pose_graph_filenames,
-                               FLAGS_skip_optimization);
+                               FLAGS_skip_optimization, FLAGS_resolution);
 }

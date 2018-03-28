@@ -143,6 +143,10 @@ class PoseGraph : public PoseGraphInterface {
   virtual void FindInterTrajectoryConstraints() {
     LOG(FATAL) << "not implemented";
   };
+
+  virtual void FindInterTrajectoryGlobalConstraints() {
+    LOG(FATAL) << "not implemented";
+  };
 };
 
 std::vector<PoseGraph::Constraint> FromProto(
