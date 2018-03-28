@@ -225,7 +225,7 @@ void RemappingTrajectoryImporter::SerializeState(
                              writer);
 }
 
-void WritePng(PoseGraph* pose_graph, io::StreamFileWriter* png_writer,
+void WritePng(PoseGraphInterface* pose_graph, io::StreamFileWriter* png_writer,
               double image_resolution) {
   LOG(INFO) << "Loading submap slices from serialized data.";
   std::map<SubmapId, io::SubmapSlice> submap_slices;
@@ -243,6 +243,77 @@ void WritePng(PoseGraph* pose_graph, io::StreamFileWriter* png_writer,
   LOG(INFO) << "Wrote image to " << png_writer->GetFilename();
 }
 
+void PrintReport(PoseGraphInterface* pose_graph) {
+  LOG(INFO) << "Summary of inter-trajectory constraints:";
+  const auto trajectory_node_poses = pose_graph->GetTrajectoryNodePoses();
+  const auto submap_poses = pose_graph->GetAllSubmapPoses();
+  const auto constraints = pose_graph->constraints();
+  cartographer::common::Histogram residual_inter_translation,
+      residual_inter_rotation;
+  const float outlier_residual_translation = 0.1f;
+  std::map<cartographer::mapping::SubmapId, int> submap_to_num_constraints;
+  std::map<cartographer::mapping::SubmapId, int> submap_to_num_good_constraints;
+  for (const auto& submap : submap_poses) {
+    submap_to_num_constraints[submap.id] = 0;
+    submap_to_num_good_constraints[submap.id] = 0;
+  }
+  for (const auto& constraint : constraints) {
+    if (constraint.tag == cartographer::mapping::PoseGraphInterface::
+                              Constraint::Tag::INTRA_SUBMAP ||
+        constraint.node_id.trajectory_id ==
+            constraint.submap_id.trajectory_id) {
+      continue;
+    }
+    const auto submap_it = submap_poses.find(constraint.submap_id);
+    if (submap_it == submap_poses.end()) {
+      continue;
+    }
+    const auto& submap_pose = submap_it->data.pose;
+    const auto node_it = trajectory_node_poses.find(constraint.node_id);
+    if (node_it == trajectory_node_poses.end()) {
+      continue;
+    }
+    const transform::Rigid3d& trajectory_node_pose = node_it->data.global_pose;
+    const transform::Rigid3d constraint_pose =
+        submap_pose * constraint.pose.zbar_ij;
+    float residual_translation =
+        (trajectory_node_pose.translation() - constraint_pose.translation())
+            .norm();
+    float residual_rotation = trajectory_node_pose.rotation().angularDistance(
+        constraint_pose.rotation());
+    residual_inter_translation.Add(residual_translation);
+    residual_inter_rotation.Add(residual_rotation);
+    submap_to_num_constraints.at(submap_it->id)++;
+    if (residual_translation < outlier_residual_translation) {
+      submap_to_num_good_constraints.at(submap_it->id)++;
+    }
+  }
+  LOG(INFO) << "translation residuals: "
+            << residual_inter_translation.ToString(10);
+  LOG(INFO) << "rotation residuals: " << residual_inter_rotation.ToString(10);
+  cartographer::common::Histogram constraints_per_submap,
+      good_constraints_per_submap, good_minus_bad_constraints_per_submap;
+  for (const auto& pair : submap_to_num_constraints) {
+    constraints_per_submap.Add(pair.second);
+  }
+  for (const auto& pair : submap_to_num_good_constraints) {
+    good_constraints_per_submap.Add(pair.second);
+  }
+  for (const auto& submap : submap_poses) {
+    int good_minus_bad = 2 * submap_to_num_good_constraints.at(submap.id) -
+                         submap_to_num_constraints.at(submap.id);
+    good_minus_bad_constraints_per_submap.Add(good_minus_bad);
+  }
+  LOG(INFO) << "#constraints per submap: "
+            << constraints_per_submap.ToString(10);
+  LOG(INFO) << "#good constraints per submap: "
+            << good_constraints_per_submap.ToString(10);
+  LOG(INFO) << "#good - #bad constraints per submap: "
+            << good_minus_bad_constraints_per_submap.ToString(10);
+  LOG(INFO) << "Here, \"good\" means the residual translation is lower than "
+            << outlier_residual_translation;
+}
+
 void Run(bool use_3d, const std::string& pose_graph_filenames,
          bool skip_optimization, double image_resolution) {
   auto filenames = SplitString(pose_graph_filenames, ',');
@@ -254,7 +325,6 @@ void Run(bool use_3d, const std::string& pose_graph_filenames,
       return POSE_GRAPH)text";
   auto pose_graph_parameters = test::ResolveLuaParameters(kPoseGraphLua);
   auto pose_graph_options = CreatePoseGraphOptions(pose_graph_parameters.get());
-  // Check if this can be dropped.
   pose_graph_options.mutable_optimization_problem_options()
       ->set_log_solver_summary(true);
 
@@ -290,19 +360,22 @@ void Run(bool use_3d, const std::string& pose_graph_filenames,
     pose_graph->FindInterTrajectoryGlobalConstraints();
     pose_graph->RunFinalOptimization();
     for (int i = 0; i < 10; ++i) {
-      pose_graph->FindInterTrajectoryConstraints();
+      for (int j = 0; j < 20; ++j) {
+        pose_graph->FindInterTrajectoryConstraints();
+      }
+      pose_graph->RunFinalOptimization();
     }
-    pose_graph->RunFinalOptimization();
-  }
-  {
-    io::StreamFileWriter writer("merged.png");
-    WritePng(pose_graph.get(), &writer, image_resolution);
+    PrintReport(pose_graph.get());
   }
   {
     std::string output_filename = "merged.pbstream";
     io::ProtoStreamWriter writer(output_filename);
     remapping_importer.SerializeState(&writer);
     LOG(INFO) << "Wrote merged pbstream " << output_filename;
+  }
+  {
+    io::StreamFileWriter writer("merged.png");
+    WritePng(pose_graph.get(), &writer, image_resolution);
   }
 }
 
