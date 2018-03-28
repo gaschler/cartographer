@@ -25,6 +25,7 @@
 #include "cartographer/io/submap_painter.h"
 #include "cartographer/mapping/internal/2d/pose_graph_2d.h"
 #include "cartographer/mapping/internal/3d/pose_graph_3d.h"
+#include "cartographer/mapping/internal/test_helpers.h"
 #include "cartographer/mapping/map_builder.h"
 #include "cartographer/mapping/pose_graph.h"
 #include "cartographer/mapping/proto/pose_graph.pb.h"
@@ -36,8 +37,7 @@
 DEFINE_bool(use_3d, false, "Use 3D pipeline (default is 2D).");
 DEFINE_string(pose_graph_filenames, "",
               "Comma-separated list of pbstream files to read.");
-DEFINE_bool(run_optimization, false,
-            "Run optimization on the entire pose graph.");
+DEFINE_bool(skip_optimization, false, "Skip all optimization.");
 
 namespace cartographer {
 namespace mapping {
@@ -79,7 +79,9 @@ class EmptyOptimizationProblem3D : public pose_graph::OptimizationProblem3D {
 };
 
 void AddProtoStreamToPoseGraph(io::ProtoStreamReaderInterface* const reader,
-                               mapping::PoseGraph* pose_graph) {
+                               mapping::PoseGraph* pose_graph,
+                               int* next_trajectory_id) {
+  // TODO(gaschler): Reuse this function with MapBuilder.
   proto::PoseGraph pose_graph_proto;
   CHECK(reader->ReadProto(&pose_graph_proto));
   proto::AllTrajectoryBuilderOptions all_builder_options_proto;
@@ -97,18 +99,17 @@ void AddProtoStreamToPoseGraph(io::ProtoStreamReaderInterface* const reader,
            all_builder_options_proto.options_with_sensor_ids_size());
 
   std::map<int, int> trajectory_remapping;
-  int new_trajectory_id = 0;
   for (auto& trajectory_proto : *pose_graph_proto.mutable_trajectory()) {
     // TODO: Collect these options for later output.
     const auto& options_with_sensor_ids_proto =
         all_builder_options_proto.options_with_sensor_ids(
             trajectory_proto.trajectory_id());
     CHECK(trajectory_remapping
-              .emplace(trajectory_proto.trajectory_id(), new_trajectory_id)
+              .emplace(trajectory_proto.trajectory_id(), *next_trajectory_id)
               .second)
         << "Duplicate trajectory ID: " << trajectory_proto.trajectory_id();
-    trajectory_proto.set_trajectory_id(new_trajectory_id);
-    new_trajectory_id++;
+    trajectory_proto.set_trajectory_id(*next_trajectory_id);
+    *next_trajectory_id += 1;
   }
 
   // Apply the calculated remapping to constraints in the pose graph proto.
@@ -145,6 +146,7 @@ void AddProtoStreamToPoseGraph(io::ProtoStreamReaderInterface* const reader,
     if (!reader->ReadProto(&proto)) {
       break;
     }
+
     if (proto.has_node()) {
       proto.mutable_node()->mutable_node_id()->set_trajectory_id(
           trajectory_remapping.at(proto.node().node_id().trajectory_id()));
@@ -171,10 +173,30 @@ void AddProtoStreamToPoseGraph(io::ProtoStreamReaderInterface* const reader,
           trajectory_remapping.at(proto.trajectory_data().trajectory_id()));
       pose_graph->SetTrajectoryDataFromProto(proto.trajectory_data());
     }
+    if (proto.has_imu_data()) {
+      pose_graph->AddImuData(
+          trajectory_remapping.at(proto.imu_data().trajectory_id()),
+          sensor::FromProto(proto.imu_data().imu_data()));
+    }
+    if (proto.has_odometry_data()) {
+      pose_graph->AddOdometryData(
+          trajectory_remapping.at(proto.odometry_data().trajectory_id()),
+          sensor::FromProto(proto.odometry_data().odometry_data()));
+    }
+    if (proto.has_fixed_frame_pose_data()) {
+      pose_graph->AddFixedFramePoseData(
+          trajectory_remapping.at(
+              proto.fixed_frame_pose_data().trajectory_id()),
+          sensor::FromProto(
+              proto.fixed_frame_pose_data().fixed_frame_pose_data()));
+    }
+    if (proto.has_landmark_data()) {
+      pose_graph->AddLandmarkData(
+          trajectory_remapping.at(proto.landmark_data().trajectory_id()),
+          sensor::FromProto(proto.landmark_data().landmark_data()));
+    }
   }
 
-  pose_graph->RunFinalOptimization();
-  // TODO(gaschler): Add constraints.
   pose_graph->AddSerializedConstraints(
       FromProto(pose_graph_proto.constraint()));
   CHECK(reader->eof());
@@ -187,17 +209,12 @@ void WritePng(PoseGraph* pose_graph, io::StreamFileWriter* png_writer) {
   for (const auto& submap_data : all_submap_data) {
     proto::Submap submap_proto;
     submap_data.data.submap->ToProto(&submap_proto, true);
-#if 0
-    CHECK(submap_proto.has_submap_2d());
-    CHECK(submap_proto.submap_2d().num_range_data() > 0);
-    CHECK(submap_proto.submap_2d().probability_grid().cells_size() > 0);
-#endif
     FillSubmapSlice(submap_data.data.pose, submap_proto,
                     &submap_slices[submap_data.id]);
   }
   LOG(INFO) << "Generating combined map image from submap slices.";
   // TODO(gaschler): Read from flag.
-  double resolution = 0.1;
+  double resolution = 0.05;
   auto result = io::PaintSubmapSlices(submap_slices, resolution);
   io::Image image(std::move(result.surface));
   image.WritePng(png_writer);
@@ -205,33 +222,50 @@ void WritePng(PoseGraph* pose_graph, io::StreamFileWriter* png_writer) {
 }
 
 void Run(bool use_3d, const std::string& pose_graph_filenames,
-         bool run_optimization) {
+         bool skip_optimization) {
   auto filenames = SplitString(pose_graph_filenames, ',');
-  // TODO(gaschler): Read other pose graphs.
-  std::string pose_graph_filename = filenames[0];
 
-  auto thread_pool = common::make_unique<common::ThreadPool>(1);
+  // TODO: Read options from flag rather than using default.
+  auto thread_pool = common::make_unique<common::ThreadPool>(16);
+  const std::string kPoseGraphLua = R"text(
+      include "pose_graph.lua"
+      return POSE_GRAPH)text";
+  auto pose_graph_parameters = test::ResolveLuaParameters(kPoseGraphLua);
+  auto pose_graph_options = CreatePoseGraphOptions(pose_graph_parameters.get());
+  // Check if this can be dropped.
+  pose_graph_options.mutable_optimization_problem_options()
+      ->set_log_solver_summary(true);
+
   std::unique_ptr<mapping::PoseGraph> pose_graph;
-  proto::PoseGraphOptions pose_graph_options;
   if (use_3d) {
-    // TODO(gaschler): Follow run_optimization flag, read default pose graph
-    // options.
+    std::unique_ptr<pose_graph::OptimizationProblem3D> optimization_problem =
+        (skip_optimization)
+            ? common::make_unique<EmptyOptimizationProblem3D>()
+            : common::make_unique<pose_graph::OptimizationProblem3D>(
+                  pose_graph_options.optimization_problem_options());
     pose_graph = common::make_unique<PoseGraph3D>(
-        pose_graph_options, common::make_unique<EmptyOptimizationProblem3D>(),
-        thread_pool.get());
+        pose_graph_options, std::move(optimization_problem), thread_pool.get());
   } else {
+    std::unique_ptr<pose_graph::OptimizationProblem2D> optimization_problem =
+        (skip_optimization)
+            ? common::make_unique<EmptyOptimizationProblem2D>()
+            : common::make_unique<pose_graph::OptimizationProblem2D>(
+                  pose_graph_options.optimization_problem_options());
     pose_graph = common::make_unique<PoseGraph2D>(
-        pose_graph_options, common::make_unique<EmptyOptimizationProblem2D>(),
-        thread_pool.get());
+        pose_graph_options, std::move(optimization_problem), thread_pool.get());
   }
 
-  LOG(INFO) << "Reading pose graph from '" << pose_graph_filename << "'...";
-  {
+  int next_trajectory_id = 0;
+  for (const std::string& pose_graph_filename : filenames) {
+    LOG(INFO) << "Reading pose graph from '" << pose_graph_filename << "'...";
     io::ProtoStreamReader reader(pose_graph_filename);
-    AddProtoStreamToPoseGraph(&reader, pose_graph.get());
+    AddProtoStreamToPoseGraph(&reader, pose_graph.get(), &next_trajectory_id);
   }
   pose_graph->RunFinalOptimization();
+  CHECK(!pose_graph->IsTrajectoryFrozen(0));
 
+  pose_graph->FindInterTrajectoryConstraints();
+  pose_graph->RunFinalOptimization();
   {
     io::StreamFileWriter writer("merged.png");
     WritePng(pose_graph.get(), &writer);
@@ -264,5 +298,5 @@ int main(int argc, char** argv) {
     return EXIT_FAILURE;
   }
   ::cartographer::mapping::Run(FLAGS_use_3d, FLAGS_pose_graph_filenames,
-                               FLAGS_run_optimization);
+                               FLAGS_skip_optimization);
 }

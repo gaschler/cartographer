@@ -496,7 +496,7 @@ void PoseGraph2D::AddSerializedConstraints(
   AddWorkItem([this, constraints]() REQUIRES(mutex_) {
     for (const auto& constraint : constraints) {
       CHECK(trajectory_nodes_.Contains(constraint.node_id));
-      // DO NOT SUBMIT
+      // DO NOT SUBMIT, this was needed for an older bag file.
       if (!submap_data_.Contains(constraint.submap_id)) {
         LOG(ERROR) << "Could not find submap_id " << constraint.submap_id;
         continue;

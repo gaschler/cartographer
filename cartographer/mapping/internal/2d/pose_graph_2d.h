@@ -137,6 +137,25 @@ class PoseGraph2D : public PoseGraph {
   transform::Rigid3d GetInterpolatedGlobalTrajectoryPose(
       int trajectory_id, const common::Time time) const REQUIRES(mutex_);
 
+  void FindInterTrajectoryConstraints() override {
+    common::MutexLocker locker(&mutex_);
+    AddWorkItem([=]() REQUIRES(mutex_) {
+      int i = 0;
+      int kSampleFraction = 2000;
+      for (const auto& submap_id_data : submap_data_) {
+        for (const auto& node_id_data : trajectory_nodes_) {
+          if (submap_id_data.id.trajectory_id !=
+                  node_id_data.id.trajectory_id &&
+              i++ % kSampleFraction == 0) {
+            constraint_builder_.MaybeAddGlobalConstraint(
+                submap_id_data.id, submap_id_data.data.submap.get(),
+                node_id_data.id, node_id_data.data.constant_data.get());
+          }
+        }
+      }
+    });
+  }
+
  private:
   // The current state of the submap in the background threads. When this
   // transitions to kFinished, all nodes are tried to match against this submap.
