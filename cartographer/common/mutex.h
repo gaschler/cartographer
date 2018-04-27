@@ -20,6 +20,7 @@
 #include <condition_variable>
 #include <mutex>
 
+#include "absl/synchronization/mutex.h"
 #include "cartographer/common/time.h"
 
 namespace cartographer {
@@ -64,32 +65,30 @@ class CAPABILITY("mutex") Mutex {
   // conditions that get checked whenever the mutex is released.
   class SCOPED_CAPABILITY Locker {
    public:
-    Locker(Mutex* mutex) ACQUIRE(mutex) : mutex_(mutex), lock_(mutex->mutex_) {}
+    Locker(Mutex* mutex) ACQUIRE(mutex)
+        : mutex_(mutex), lock_(&mutex->mutex_) {}
 
-    ~Locker() RELEASE() {
-      lock_.unlock();
-      mutex_->condition_.notify_all();
-    }
+    ~Locker() RELEASE() {}
 
     template <typename Predicate>
     void Await(Predicate predicate) REQUIRES(this) {
-      mutex_->condition_.wait(lock_, predicate);
+      mutex_->mutex_.Await(::absl::Condition(&predicate));
     }
 
     template <typename Predicate>
     bool AwaitWithTimeout(Predicate predicate, common::Duration timeout)
         REQUIRES(this) {
-      return mutex_->condition_.wait_for(lock_, timeout, predicate);
+      return mutex_->mutex_.AwaitWithTimeout(::absl::Condition(&predicate),
+                                             ::absl::FromChrono(timeout));
     }
 
    private:
     Mutex* mutex_;
-    std::unique_lock<std::mutex> lock_;
+    ::absl::MutexLock lock_;
   };
 
  private:
-  std::condition_variable condition_;
-  std::mutex mutex_;
+  ::absl::Mutex mutex_;
 };
 
 using MutexLocker = Mutex::Locker;
