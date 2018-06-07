@@ -435,6 +435,10 @@ void PoseGraph3D::WaitForAllComputations() {
   locker.Await([&notification]() { return notification; });
 }
 
+void PoseGraph3D::DeleteTrajectory(const int trajectory_id) {
+  LOG(FATAL) << "not implemented";
+}
+
 void PoseGraph3D::FinishTrajectory(const int trajectory_id) {
   common::MutexLocker locker(&mutex_);
   AddWorkItem([this, trajectory_id]() REQUIRES(mutex_) {

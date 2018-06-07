@@ -433,6 +433,18 @@ void PoseGraph2D::WaitForAllComputations() {
   locker.Await([&notification]() { return notification; });
 }
 
+void PoseGraph2D::DeleteTrajectory(const int trajectory_id) {
+  common::MutexLocker locker(&mutex_);
+  AddWorkItem([this, trajectory_id]() REQUIRES(mutex_) {
+    CHECK(IsTrajectoryFinished(trajectory_id));
+    TrimmingHandle trimming_handle(this);
+    auto submap_ids = trimming_handle.GetSubmapIds(trajectory_id);
+    for (auto& submap_id : submap_ids) {
+      trimming_handle.MarkSubmapAsTrimmed(submap_id);
+    }
+  });
+}
+
 void PoseGraph2D::FinishTrajectory(const int trajectory_id) {
   common::MutexLocker locker(&mutex_);
   AddWorkItem([this, trajectory_id]() REQUIRES(mutex_) {

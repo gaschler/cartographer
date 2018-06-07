@@ -15,6 +15,7 @@
  */
 
 #include "cartographer/mapping/map_builder.h"
+#include <gmock/gmock-matchers.h>
 
 #include "cartographer/common/config.h"
 #include "cartographer/mapping/internal/testing/test_helpers.h"
@@ -83,6 +84,22 @@ class MapBuilderTest : public ::testing::Test {
                        InsertionResult>) {
       local_slam_result_poses_.push_back(local_pose);
     };
+  }
+
+  int CreateTrajectoryWithFakeData(double timestamps_add_duration = 0.) {
+    int trajectory_id = map_builder_->AddTrajectoryBuilder(
+        {kRangeSensorId}, trajectory_builder_options_,
+        GetLocalSlamResultCallback());
+    TrajectoryBuilderInterface* trajectory_builder =
+        map_builder_->GetTrajectoryBuilder(trajectory_id);
+    auto measurements = test::GenerateFakeRangeMeasurements(
+        kTravelDistance, kDuration, kTimeStep);
+    for (auto& measurement : measurements) {
+      measurement.time += common::FromSeconds(timestamps_add_duration);
+      trajectory_builder->AddSensorData(kRangeSensorId.id, measurement);
+    }
+    map_builder_->FinishTrajectory(trajectory_id);
+    return trajectory_id;
   }
 
   std::unique_ptr<MapBuilderInterface> map_builder_;
@@ -189,6 +206,10 @@ TEST_F(MapBuilderTest, GlobalSlam2D) {
                   .norm(),
               0.1 * kTravelDistance);
   EXPECT_GE(map_builder_->pose_graph()->constraints().size(), 50);
+  EXPECT_THAT(map_builder_->pose_graph()->constraints(),
+              testing::Contains(testing::Field(
+                  &PoseGraphInterface::Constraint::tag,
+                  PoseGraphInterface::Constraint::INTER_SUBMAP)));
   const auto trajectory_nodes =
       map_builder_->pose_graph()->GetTrajectoryNodes();
   EXPECT_GE(trajectory_nodes.SizeOfTrajectoryOrZero(trajectory_id), 20);
@@ -228,6 +249,10 @@ TEST_F(MapBuilderTest, GlobalSlam3D) {
                   .norm(),
               0.1 * kTravelDistance);
   EXPECT_GE(map_builder_->pose_graph()->constraints().size(), 10);
+  EXPECT_THAT(map_builder_->pose_graph()->constraints(),
+              testing::Contains(testing::Field(
+                  &PoseGraphInterface::Constraint::tag,
+                  PoseGraphInterface::Constraint::INTER_SUBMAP)));
   const auto trajectory_nodes =
       map_builder_->pose_graph()->GetTrajectoryNodes();
   EXPECT_GE(trajectory_nodes.SizeOfTrajectoryOrZero(trajectory_id), 5);
@@ -238,6 +263,44 @@ TEST_F(MapBuilderTest, GlobalSlam3D) {
       local_slam_result_poses_.back();
   EXPECT_NEAR(kTravelDistance, final_pose.translation().norm(),
               0.1 * kTravelDistance);
+}
+
+TEST_F(MapBuilderTest, DeleteTrajectory2D) {
+  SetOptionsEnableGlobalOptimization();
+  BuildMapBuilder();
+  int trajectory_id = CreateTrajectoryWithFakeData();
+  map_builder_->pose_graph()->RunFinalOptimization();
+  EXPECT_GE(map_builder_->pose_graph()->constraints().size(), 50);
+  EXPECT_GE(
+      map_builder_->pose_graph()->GetTrajectoryNodes().SizeOfTrajectoryOrZero(
+          trajectory_id),
+      20);
+  EXPECT_GE(
+      map_builder_->pose_graph()->GetAllSubmapData().SizeOfTrajectoryOrZero(
+          trajectory_id),
+      5);
+  map_builder_->pose_graph()->DeleteTrajectory(trajectory_id);
+  int another_trajectory_id = CreateTrajectoryWithFakeData(100.);
+  map_builder_->pose_graph()->RunFinalOptimization();
+  EXPECT_EQ(
+      map_builder_->pose_graph()->GetTrajectoryNodes().SizeOfTrajectoryOrZero(
+          trajectory_id),
+      0);
+  EXPECT_EQ(
+      map_builder_->pose_graph()->GetAllSubmapData().SizeOfTrajectoryOrZero(
+          trajectory_id),
+      0);
+  map_builder_->pose_graph()->DeleteTrajectory(another_trajectory_id);
+  map_builder_->pose_graph()->RunFinalOptimization();
+  EXPECT_EQ(map_builder_->pose_graph()->constraints().size(), 0);
+  EXPECT_EQ(
+      map_builder_->pose_graph()->GetTrajectoryNodes().SizeOfTrajectoryOrZero(
+          another_trajectory_id),
+      0);
+  EXPECT_EQ(
+      map_builder_->pose_graph()->GetAllSubmapData().SizeOfTrajectoryOrZero(
+          another_trajectory_id),
+      0);
 }
 
 }  // namespace
