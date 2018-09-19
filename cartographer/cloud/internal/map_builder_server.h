@@ -68,11 +68,16 @@ class MapBuilderContext : public MapBuilderContextInterface {
                                      int trajectory_id) override;
   bool CheckClientIdForTrajectory(const std::string& client_id,
                                   int trajectory_id) override;
+  bool IsDuplicateBatchRequest(
+      const proto::AddSensorDataBatchRequest& request) override;
 
  private:
   MapBuilderServer* map_builder_server_;
   mapping::SubmapController<SubmapType> submap_controller_;
   std::map</*trajectory_id=*/int, /*client_id=*/std::string> client_ids_;
+  // TODO(gaschler): Take smaller lock only for client/trajectory.
+  std::map<std::tuple<int, std::string, std::string>, int64_t>
+      previous_request_first_timestamp_;
 };
 
 class MapBuilderServer : public MapBuilderServerInterface {

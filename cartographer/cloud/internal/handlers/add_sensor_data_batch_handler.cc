@@ -36,6 +36,11 @@ metrics::Family<metrics::Counter>*
 
 void AddSensorDataBatchHandler::OnRequest(
     const proto::AddSensorDataBatchRequest& request) {
+  if (GetContext<MapBuilderContextInterface>()->IsDuplicateBatchRequest(
+          request)) {
+    Send(absl::make_unique<google::protobuf::Empty>());
+    return;
+  }
   for (const proto::SensorData& sensor_data : request.sensor_data()) {
     if (!GetContext<MapBuilderContextInterface>()->CheckClientIdForTrajectory(
             sensor_data.sensor_metadata().client_id(),

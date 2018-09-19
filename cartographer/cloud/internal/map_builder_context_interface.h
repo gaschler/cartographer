@@ -96,6 +96,8 @@ class MapBuilderContextInterface : public async_grpc::ExecutionContext {
                                              int trajectory_id) = 0;
   virtual bool CheckClientIdForTrajectory(const std::string& client_id,
                                           int trajectory_id) = 0;
+  virtual bool IsDuplicateBatchRequest(
+      const proto::AddSensorDataBatchRequest& request) = 0;
 };
 
 }  // namespace cloud

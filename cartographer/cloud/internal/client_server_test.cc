@@ -769,6 +769,54 @@ TEST_P(ClientServerTestByGridType, LocalSlam2DHandlesInvalidRequests) {
   server_->Shutdown();
 }
 
+TEST_F(ClientServerTest, UplinkServerHandlesDuplicates) {
+  InitializeServerWithMockMapBuilder();
+  server_->Start();
+  const int kLocalTrajectoryId = 3;
+  const int kUplinkTrajectoryId = 42;
+  auto uploader = CreateLocalTrajectoryUploader(
+      uploading_map_builder_server_options_.uplink_server_address(),
+      /*batch_size=*/1, false, false);
+  uploader->Start();
+  EXPECT_CALL(*mock_map_builder_, AddTrajectoryBuilder(_, _, _))
+      .Times(1)
+      .WillOnce(::testing::Return(kUplinkTrajectoryId));
+  EXPECT_CALL(*mock_map_builder_, GetTrajectoryBuilder(kUplinkTrajectoryId))
+      .WillRepeatedly(::testing::Return(mock_trajectory_builder_.get()));
+  auto status =
+      uploader->AddTrajectory(kClientId, kLocalTrajectoryId, {kImuSensorId},
+                              trajectory_builder_options_);
+  EXPECT_TRUE(status.ok()) << status.error_message();
+  {
+    proto::SensorData sensor_data;
+    sensor_data.mutable_sensor_metadata()->set_client_id(kClientId);
+    sensor_data.mutable_sensor_metadata()->set_sensor_id(kImuSensorId.id);
+    sensor_data.mutable_sensor_metadata()->set_trajectory_id(
+        kLocalTrajectoryId);
+    sensor_data.mutable_imu_data()->set_timestamp(1);
+    EXPECT_CALL(*mock_trajectory_builder_,
+                AddSensorData(::testing::StrEq(kImuSensorId.id),
+                              ::testing::Matcher<const sensor::ImuData&>(_)))
+        .Times(2)
+        .WillRepeatedly(::testing::Return());
+    for (int i = 0; i < 3; ++i) {
+      uploader->EnqueueSensorData(
+          absl::make_unique<proto::SensorData>(sensor_data));
+    }
+    sensor_data.mutable_imu_data()->set_timestamp(2);
+    for (int i = 0; i < 2; ++i) {
+      uploader->EnqueueSensorData(
+          absl::make_unique<proto::SensorData>(sensor_data));
+    }
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+  }
+  EXPECT_CALL(*mock_map_builder_, FinishTrajectory(kUplinkTrajectoryId));
+  status = uploader->FinishTrajectory(kClientId, kLocalTrajectoryId);
+  EXPECT_TRUE(status.ok()) << status.error_message();
+  uploader->Shutdown();
+  server_->Shutdown();
+}
+
 }  // namespace
 }  // namespace cloud
 }  // namespace cartographer

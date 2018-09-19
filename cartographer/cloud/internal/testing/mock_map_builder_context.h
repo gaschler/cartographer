@@ -61,6 +61,8 @@ class MockMapBuilderContext : public MapBuilderContextInterface {
                     const mapping::proto::LocalSlamResultData &));
   MOCK_METHOD2(RegisterClientIdForTrajectory, void(const std::string &, int));
   MOCK_METHOD2(CheckClientIdForTrajectory, bool(const std::string &, int));
+  MOCK_METHOD1(IsDuplicateBatchRequest,
+               bool(const proto::AddSensorDataBatchRequest &));
 };
 
 }  // namespace testing

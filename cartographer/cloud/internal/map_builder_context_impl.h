@@ -123,6 +123,51 @@ bool MapBuilderContext<SubmapType>::CheckClientIdForTrajectory(
           client_ids_[trajectory_id] == client_id);
 }
 
+template <class SubmapType>
+bool MapBuilderContext<SubmapType>::IsDuplicateBatchRequest(
+    const proto::AddSensorDataBatchRequest& request) {
+  if (request.sensor_data_size() == 0) return false;
+  const auto& data = request.sensor_data(0);
+  const std::tuple<int, std::string, std::string> key = {
+      data.sensor_metadata().trajectory_id(),
+      data.sensor_metadata().sensor_id(), data.sensor_metadata().client_id()};
+  int64_t timestamp = 0;
+  switch (data.sensor_data_case()) {
+    case proto::SensorData::kOdometryData:
+      timestamp = data.odometry_data().timestamp();
+      break;
+    case proto::SensorData::kImuData:
+      timestamp = data.imu_data().timestamp();
+      break;
+    case proto::SensorData::kTimedPointCloudData:
+      timestamp = data.timed_point_cloud_data().timestamp();
+      break;
+    case proto::SensorData::kFixedFramePoseData:
+      timestamp = data.fixed_frame_pose_data().timestamp();
+      break;
+    case proto::SensorData::kLandmarkData:
+      timestamp = data.landmark_data().timestamp();
+      break;
+    case proto::SensorData::kLocalSlamResultData:
+      timestamp = data.local_slam_result_data().timestamp();
+      break;
+    case proto::SensorData::SENSOR_DATA_NOT_SET:
+      return false;
+  }
+  auto it = previous_request_first_timestamp_.find(key);
+  if (it != previous_request_first_timestamp_.end() &&
+      timestamp == it->second) {
+    LOG(WARNING) << "Duplicate AddSensorDataBatchRequest "
+                 << " trajectory_id: " << data.sensor_metadata().trajectory_id()
+                 << " sensor_id: " << data.sensor_metadata().sensor_id()
+                 << " client_id: " << data.sensor_metadata().client_id()
+                 << " timestamp: " << timestamp;
+    return true;
+  }
+  previous_request_first_timestamp_[key] = timestamp;
+  return false;
+}
+
 template <>
 void MapBuilderContext<mapping::Submap2D>::EnqueueLocalSlamResultData(
     int trajectory_id, const std::string& sensor_id,
